@@ -181,14 +181,14 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
             if (firstLineHighlighter == null) {
                 firstLineHighlighter = markupModel.addLineHighlighter(0, 1, null)
             }
-            firstLineHighlighter!!.lineMarkerRenderer = leanFileProgressFinishedFillingLineMarkerRender
+            firstLineHighlighter!!.lineMarkerRenderer = LeanFileProgressFinishedFillingLineMarkerRenderer
             for (highlighter in highlighters) {
                 markupModel.removeHighlighter(highlighter)
             }
             for (processingInfo in info.processing) {
                 val startLine = processingInfo.range.start.line.let {
                     if (it == 0) {
-                        firstLineHighlighter!!.lineMarkerRenderer = leanFileProgressFillingLineMarkerRender
+                        firstLineHighlighter!!.lineMarkerRenderer = LeanFileProgressFillingLineMarkerRenderer
                         1
                     } else {
                         it
@@ -209,7 +209,7 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
                 val rangeHighlighter = markupModel.addRangeHighlighter(
                     leanFileProgressEmptyTextAttributesKey,
                     startLineOffset, endLineOffset, HighlighterLayer.LAST, HighlighterTargetArea.LINES_IN_RANGE)
-                rangeHighlighter.lineMarkerRenderer = leanFileProgressFillingLineMarkerRender
+                rangeHighlighter.lineMarkerRenderer = LeanFileProgressFillingLineMarkerRenderer
                 ret.add(rangeHighlighter)
             }
             ret

@@ -15,7 +15,7 @@ import com.intellij.ui.dsl.builder.panel
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
 
-class JcefInfoviewTooWindowFactory : ToolWindowFactory {
+class JcefInfoviewToolWindowFactory : ToolWindowFactory {
 
     companion object {
         /**

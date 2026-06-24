@@ -107,7 +107,7 @@
                     icon="/icons/infoview_icon.svg"
                     librarySearchClass="lean4ij.infoview.InfoviewLibrarySearchHelper"
         />
-        <library.toolWindow factoryClass="lean4ij.infoview.external.JcefInfoviewTooWindowFactory"
+        <library.toolWindow factoryClass="lean4ij.infoview.external.JcefInfoviewToolWindowFactory"
                     id="LeanInfoviewJcef"
                     icon="/icons/jcef_icon.svg"
                     librarySearchClass="lean4ij.infoview.InfoviewLibrarySearchHelper"
