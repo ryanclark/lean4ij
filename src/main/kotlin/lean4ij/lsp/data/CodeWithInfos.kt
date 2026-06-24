@@ -17,7 +17,6 @@ import org.eclipse.lsp4j.TextDocumentIdentifier
  */
 interface InfoViewContent {
     fun contextInfo(offset: Int, startOffset: Int, endOffset: Int): Triple<ContextInfo, Int, Int>?
-    fun mayHighlight(sb: InfoviewRender, startOffset: Int, endOffset: Int) {}
     fun toInfoObjectModel(): InfoObjectModel
 }
 
