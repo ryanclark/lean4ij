@@ -139,6 +139,10 @@ class LeanFileProgressRenderer(
 
     /** this is for avoiding flashing, a highlighter is always added in the first line */
     private var firstLineHighlighter: RangeHighlighter? = null
+    // The editor [firstLineHighlighter] was created on. A LeanFile (and its renderer) lives for the whole
+    // project session, so if the file is closed and reopened in a NEW editor the cached highlighter would be
+    // stale (bound to the old, now-disposed editor); recreate it when the selected editor changes.
+    private var firstLineHighlighterEditor: com.intellij.openapi.editor.Editor? = null
     private val leanFileProgressEmptyTextAttributesKey = TextAttributesKey.createTextAttributesKey("LEAN_FILE_PROGRESS_EMPTY")
 
     private suspend fun tryAddLineMarker(info: FileProgressProcessingInfo, highlighters: MutableList<RangeHighlighter>): MutableList<RangeHighlighter> {
@@ -153,8 +157,9 @@ class LeanFileProgressRenderer(
             if (editor.virtualFile?.path != unquotedFile) return@withContext ret
             val document = editor.document
             val markupModel = editor.markupModel
-            if (firstLineHighlighter == null) {
+            if (firstLineHighlighter == null || firstLineHighlighterEditor !== editor) {
                 firstLineHighlighter = markupModel.addLineHighlighter(0, 1, null)
+                firstLineHighlighterEditor = editor
             }
             firstLineHighlighter!!.lineMarkerRenderer = LeanFileProgressFinishedFillingLineMarkerRenderer
             for (highlighter in highlighters) {

@@ -62,27 +62,31 @@ class EditorHoverHighlightService(private val project: Project) {
         // platform's wrong-thread / belongs-to-the-tree assertions can't fire under selection/editor races.
         ApplicationManager.getApplication().invokeLater {
         if (project.isDisposed) return@invokeLater
+        // Detach the previous hover listener/highlighter unconditionally, BEFORE looking up the selected
+        // editor. Capture and null the fields first so a re-entrant call cannot remove the same artifacts
+        // twice, and remove them from the editor they were actually attached to. Done outside the
+        // selectedTextEditor?.let below because when a hover response arrives while no editor is selected
+        // (selectedTextEditor == null) the let is skipped, which would leave the previous listener attached
+        // until the next hover that lands while an editor is selected.
+        val previousEditor = hoverEditor
+        val previousListener = hoverListener
+        val previousHighlighter = hoverRangeHighlighter
+        hoverEditor = null
+        hoverListener = null
+        hoverRangeHighlighter = null
+        if (previousEditor != null && !previousEditor.isDisposed) {
+            if (previousListener != null) {
+                thisLogger().debug("remove hover listener $previousListener for $previousEditor")
+                previousEditor.removeEditorMouseMotionListener(previousListener)
+            }
+            if (previousHighlighter != null) {
+                previousEditor.markupModel.removeHighlighter(previousHighlighter)
+            }
+        }
+
         FileEditorManager.getInstance(project).selectedTextEditor?.let { editor ->
             val document = editor.document
             val markupModel = editor.markupModel
-
-            // Capture and null the fields before removing so a re-entrant call cannot remove the same
-            // artifacts twice, and remove them from the editor they were actually attached to.
-            val previousEditor = hoverEditor
-            val previousListener = hoverListener
-            val previousHighlighter = hoverRangeHighlighter
-            hoverEditor = null
-            hoverListener = null
-            hoverRangeHighlighter = null
-            if (previousEditor != null && !previousEditor.isDisposed) {
-                if (previousListener != null) {
-                    thisLogger().debug("remove hover listener $previousListener for $previousEditor")
-                    previousEditor.removeEditorMouseMotionListener(previousListener)
-                }
-                if (previousHighlighter != null) {
-                    previousEditor.markupModel.removeHighlighter(previousHighlighter)
-                }
-            }
 
             if (hover == null) {
                 return@let

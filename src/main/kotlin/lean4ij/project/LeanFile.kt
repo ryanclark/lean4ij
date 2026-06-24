@@ -6,13 +6,10 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.LogicalPosition
-import com.intellij.openapi.editor.markup.DefaultLineMarkerRenderer
-import com.intellij.openapi.editor.markup.LineMarkerRendererEx
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.VirtualFile
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel

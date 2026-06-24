@@ -3,7 +3,10 @@ package lean4ij.project
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.components.Service
+import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
+import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.FileEditorManagerListener
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.redhat.devtools.lsp4ij.LanguageServersRegistry
@@ -38,6 +41,19 @@ class LakePackageService(private val project: Project) {
 
     /** server ids already registered with lsp4ij (atomic guard against duplicate registration). */
     private val registeredServerIds = ConcurrentHashMap.newKeySet<String>()
+
+    init {
+        // Evict a file's cached package root when it closes, mirroring LeanSymbolColoringService, so
+        // packageRootCache (populated on the hot isEnabled/belongsTo path for every file lsp4ij queries,
+        // including library sources browsed via go-to-definition) doesn't grow for the whole project session.
+        // Parented to a project-scoped disposable so the subscription is removed on project close.
+        project.messageBus.connect(project.service<LeanProjectDisposable>())
+            .subscribe(FileEditorManagerListener.FILE_EDITOR_MANAGER, object : FileEditorManagerListener {
+                override fun fileClosed(source: FileEditorManager, file: VirtualFile) {
+                    packageRootCache.remove(file.path)
+                }
+            })
+    }
 
     private fun basePath(): Path? = project.basePath?.let { runCatching { Path.of(it) }.getOrNull() }
 

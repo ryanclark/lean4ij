@@ -2,14 +2,11 @@ package lean4ij.project
 
 import lean4ij.util.Constants
 import lean4ij.util.LspUtil
-import com.intellij.build.AbstractViewManager
 import com.intellij.build.BuildDescriptor
 import com.intellij.build.DefaultBuildDescriptor
 import com.intellij.build.SyncViewManager
 import com.intellij.build.progress.BuildProgress
 import com.intellij.build.progress.BuildProgressDescriptor
-import com.intellij.notification.NotificationGroupManager
-import com.intellij.notification.NotificationType
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
@@ -17,6 +14,7 @@ import com.intellij.openapi.externalSystem.model.ProjectSystemId
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskId
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskType
 import com.intellij.openapi.project.Project
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 
@@ -51,6 +49,10 @@ class BuildWindowService(val project: Project) {
 
             // Single collector, so `builds`/`progress` are confined to this coroutine and need no mutex.
             for (s in events) {
+                // A single throwing event must not terminate this collector: if this coroutine dies, the build
+                // tool window silently stops updating for the rest of the session. Rethrow cancellation, log
+                // everything else and continue with the next event.
+                try {
                     // TODO rather than using string, use class for this
                     // TODO never mind, keep it running
                     // if (s == "--") {
@@ -96,21 +98,21 @@ class BuildWindowService(val project: Project) {
                         }
                         fileProgress.output("${s.message}\n", false)
                         if (s.message.contains("error: build failed")) {
-                            try {
-                                // for (entry in builds.entries) {
-                                //     entry.value.cancel()
-                                // }
-                                // TODO better way for handling this
-                                fileProgress.cancel()
-                                builds.remove(s.file)
-                                // project.notifyErr("Build failed, check build window for detail:\n${s.message}")
-                                thisLogger().warn("${s.file} build failed with message:\n${s.message}")
-                            } catch(ex : Exception) {
-                                throw ex
-                            }
-
+                            // for (entry in builds.entries) {
+                            //     entry.value.cancel()
+                            // }
+                            // TODO better way for handling this
+                            fileProgress.cancel()
+                            builds.remove(s.file)
+                            // project.notifyErr("Build failed, check build window for detail:\n${s.message}")
+                            thisLogger().warn("${s.file} build failed with message:\n${s.message}")
                         }
                     }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    thisLogger().warn("build event handling failed for ${s.file}: ${e.message}", e)
+                }
             }
         }
     }

@@ -65,6 +65,12 @@ class LeanFileSession(
 
     /** Reset on server restart (see [LeanFile.restart]); a subsequent [getSession] reconnects. */
     fun reset() {
+        // Cancel the keep-alive loop too. LeanFile.restart() nulls the session but does not reconnect, and the
+        // loop now survives exceptions (the catch below), so without this it keeps firing every 9s on
+        // RpcKeepAliveParams(file, session!!) -> NPE (swallowed, debug-logged) until the next getSession()
+        // reconnects. A fresh getSession() starts a new loop.
+        keepAliveJob?.cancel()
+        keepAliveJob = null
         session = null
     }
 

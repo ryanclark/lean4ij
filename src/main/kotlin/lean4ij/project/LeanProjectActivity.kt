@@ -36,7 +36,8 @@ class LeanProjectActivity : ProjectActivity {
 
         setupEditorFocusChangeEventListener(project)
 
-        project.service<LeanProjectService>()
+        // Force lazy init of these services for their side effects. LeanProjectService is already initialized
+        // above (leanProject), so it is not re-fetched here.
         project.service<LeanFileCaretListener>()
         project.service<ExternalInfoViewService>()
 
