@@ -158,21 +158,7 @@ class MiniInfoviewService(private val project: Project, val scope: CoroutineScop
     }
 
     private fun getGoal(interactiveGoals: InteractiveGoals?, interactiveTermGoal: InteractiveTermGoal?): InfoObjectModel? {
-        val goals = interactiveGoals?.goals
-        val prefix = "⊢ "
-
-        val type = if (goals?.size == 1) {
-            interactiveGoals.goals[0].type
-        } else if (ALLOW_TERM_GOALS) {
-            interactiveTermGoal?.type ?: return null
-        } else {
-            return null
-        }
-
-        return info {
-            p(prefix, Lean4TextAttributesKeys.SwingInfoviewGoalSymbol)
-            add(type.toInfoObjectModel())
-        }
+        return selectMiniInfoviewGoal(interactiveGoals, interactiveTermGoal, ALLOW_TERM_GOALS)
     }
 
     fun updateCaret(
@@ -196,5 +182,34 @@ class MiniInfoviewService(private val project: Project, val scope: CoroutineScop
         } else {
             cancel()
         }
+    }
+}
+
+/**
+ * Pure decision logic extracted from [MiniInfoviewService.getGoal] for characterization testing.
+ *
+ * Behavior is identical to the original inlined logic: when there is exactly one interactive goal,
+ * its type is rendered (prefixed with the goal symbol); when [allowTermGoals] is enabled and there
+ * is not exactly one goal, the term goal's type is rendered (or null when absent); otherwise null.
+ */
+internal fun selectMiniInfoviewGoal(
+    interactiveGoals: InteractiveGoals?,
+    interactiveTermGoal: InteractiveTermGoal?,
+    allowTermGoals: Boolean,
+): InfoObjectModel? {
+    val goals = interactiveGoals?.goals
+    val prefix = "⊢ "
+
+    val type = if (goals?.size == 1) {
+        interactiveGoals.goals[0].type
+    } else if (allowTermGoals) {
+        interactiveTermGoal?.type ?: return null
+    } else {
+        return null
+    }
+
+    return info {
+        p(prefix, Lean4TextAttributesKeys.SwingInfoviewGoalSymbol)
+        add(type.toInfoObjectModel())
     }
 }

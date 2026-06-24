@@ -71,6 +71,57 @@ import kotlin.math.max
 import kotlin.math.min
 
 
+/**
+ * The decision taken by [classifyRpcRetry] for a given LSP [org.eclipse.lsp4j.jsonrpc.messages.ResponseError].
+ *
+ * This is a behavior-preserving extraction of the inline error-code classification that used to live
+ * directly inside [LeanFile.rpcCallWithRetry]. It maps a `(code, message)` pair to one of three actions.
+ */
+internal enum class RpcRetryDecision {
+    /** code == -32900 && message == "Outdated RPC session": refresh the RPC session and re-issue the call. */
+    RETRY_AFTER_SESSION_UPDATE,
+
+    /** A known, swallowable error: return `null` from the rpc call. */
+    RETURN_NULL,
+
+    /** An unrecognized error: rethrow the original exception. */
+    RETHROW,
+}
+
+/**
+ * Pure classification of an LSP RPC [org.eclipse.lsp4j.jsonrpc.messages.ResponseError] into a
+ * [RpcRetryDecision]. Semantics are IDENTICAL to the original inline `if` chain in
+ * [LeanFile.rpcCallWithRetry]:
+ *
+ *  - `-32900` + `"Outdated RPC session"`                  -> [RpcRetryDecision.RETRY_AFTER_SESSION_UPDATE]
+ *  - `-32603` + `"elaboration interrupted"`               -> [RpcRetryDecision.RETURN_NULL]
+ *  - `-32601` + message contains `"No RPC method"`        -> [RpcRetryDecision.RETURN_NULL]
+ *  - `-32801` + message contains `"Cannot process request to closed file "` -> [RpcRetryDecision.RETURN_NULL]
+ *  - `-32602` + message contains `"Cannot decode params in RPC call"`        -> [RpcRetryDecision.RETURN_NULL]
+ *  - anything else                                        -> [RpcRetryDecision.RETHROW]
+ *
+ * As in the original, the `contains`-based branches dereference [message] (it is a non-null platform
+ * String there); reaching such a branch with a null message throws, exactly as before.
+ */
+internal fun classifyRpcRetry(code: Int, message: String?): RpcRetryDecision {
+    if (code == -32900 && message == "Outdated RPC session") {
+        return RpcRetryDecision.RETRY_AFTER_SESSION_UPDATE
+    }
+    if (code == -32603 && message == "elaboration interrupted") {
+        return RpcRetryDecision.RETURN_NULL
+    }
+    if (code == -32601 && message!!.contains("No RPC method")) {
+        return RpcRetryDecision.RETURN_NULL
+    }
+    if (code == -32801 && message!!.contains("Cannot process request to closed file ")) {
+        return RpcRetryDecision.RETURN_NULL
+    }
+    if (code == -32602 && message!!.contains("Cannot decode params in RPC call")) {
+        return RpcRetryDecision.RETURN_NULL
+    }
+    return RpcRetryDecision.RETHROW
+}
+
 class LeanFile(private val leanProjectService: LeanProjectService, private val file: String) {
 
     companion object {
@@ -449,54 +500,25 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
             // TODO refactor this
             val responseError = ex.responseError
             // TODO remove this magic number and find lean source code for it
-            if (responseError.code == -32900 && responseError.message == "Outdated RPC session") {
-                // Here there is a possibility that rpcCallRaw is called concurrently and all of them failed
-                // the lock in updateSession will avoid update session continuously
-                // also check the comment inside updateSession, in fact we keep it alive forever...
-                updateSession(params.sessionId)
-                params.sessionId = session!!
-                return action(params)
-            }
-            if (responseError.code == -32603 && responseError.message == "elaboration interrupted") {
-                return null
-            }
-            if (responseError.code == -32601 && responseError.message.contains("No RPC method")) {
+            when (classifyRpcRetry(responseError.code, responseError.message)) {
+                RpcRetryDecision.RETRY_AFTER_SESSION_UPDATE -> {
+                    // Here there is a possibility that rpcCallRaw is called concurrently and all of them failed
+                    // the lock in updateSession will avoid update session continuously
+                    // also check the comment inside updateSession, in fact we keep it alive forever...
+                    updateSession(params.sessionId)
+                    params.sessionId = session!!
+                    return action(params)
+                }
                 /**
-                 * TODO this seems weird too
-                 *      2024-08-11 14:17:38,335 [ 624441]   WARN - org.eclipse.lsp4j.jsonrpc.RemoteEndpoint - Unmatched response message: {
-                 *        "jsonrpc": "2.0",
-                 *        "id": "142",
-                 *        "error": {
-                 *          "code": -32601,
-                 *          "message": "No RPC method \u0027Lean.Widget.getInteractiveDiagnostics\u0027 found"
-                 *        }
-                 *      }
+                 * The RETURN_NULL branch (see classifyRpcRetry) covers:
+                 * -32603 / "elaboration interrupted"
+                 * -32601 / "No RPC method ..." e.g. "No RPC method 'Lean.Widget.getInteractiveDiagnostics' found"
+                 * -32801 / "Cannot process request to closed file ..." e.g. "Cannot process request to closed file 'file:///....'"
+                 * -32602 / "Cannot decode params in RPC call ..." e.g. "Cannot decode params in RPC call '...'"
                  */
-                return null
+                RpcRetryDecision.RETURN_NULL -> return null
+                RpcRetryDecision.RETHROW -> throw ex
             }
-            /**
-             * TODO for the following error ,
-             *      Error: {
-             *          "code": -32801,
-             *          "message": "Cannot process request to closed file \u0027file:///....\u0027"
-             *      }
-             * should it be automatically reopen?
-             */
-            if (responseError.code == -32801 && responseError.message.contains("Cannot process request to closed file ")) {
-                return null
-            }
-            if (responseError.code == -32602 && responseError.message.contains("Cannot decode params in RPC call")) {
-                /**
-                 * TODO weird for this error
-                 *      handle it
-                 * {
-                 *   "code": -32602,
-                 *   "message": "Cannot decode params in RPC call \u0027Lean.Widget.InteractiveDiagnostics.infoToInteractive({\"p\":\"2\"})\u0027\nRPC reference \u00272\u0027 is not valid"
-                 * }
-                 */
-                return null
-            }
-            throw ex
         } catch (ex: Exception) {
             // org.eclipse.lsp4j.jsonrpc.ResponseErrorException: elaboration interrupted
             // TODO outdated session seems not reported here

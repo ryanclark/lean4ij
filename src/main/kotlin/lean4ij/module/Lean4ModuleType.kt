@@ -80,6 +80,48 @@ import kotlin.concurrent.timerTask
 
 val QUICK_STARTER_MODEL_KEY = Key<GraphProperty<QuickStarterModel?>>("lean4_quick_starter_model")
 
+/**
+ * Pure `lake new` command string builder. Extracted from [QuickStarterModel.lakeCommand]
+ * so the (default-vs-non-default template/language) branching can be characterization tested
+ * without a live PropertyGraph/WizardContext.
+ *
+ * [template] is compared against [QuickStarterModel.TEMPLATES]`[0]` and [language] against
+ * [QuickStarterModel.LANGUAGES]`[0]` to decide which suffixes to append.
+ */
+internal fun buildLakeCommand(entityName: String, template: String, language: String): String {
+    val commandBuilder = StringBuilder("lake new $entityName")
+    val isDefaultTemplate = template == QuickStarterModel.TEMPLATES[0]
+    val isDefaultLanguage = language == QuickStarterModel.LANGUAGES[0]
+    if (!isDefaultTemplate) {
+        commandBuilder.append(" $template")
+    }
+    if (!isDefaultLanguage) {
+        if (isDefaultTemplate) {
+            commandBuilder.append(" ")
+        }
+        commandBuilder.append(".$language")
+    }
+    return commandBuilder.toString()
+}
+
+/**
+ * Pure construction of a [Proxy] from a proxy URL string. Extracted from
+ * [QuickStarterModel.getVersions] so the SOCKS-vs-HTTP selection and host/port wiring
+ * can be characterization tested without the surrounding property graph / network call.
+ *
+ * Mirrors the original logic: a protocol containing "sock" yields [Proxy.Type.SOCKS],
+ * otherwise [Proxy.Type.HTTP].
+ */
+internal fun proxyFromUrl(proxyValue: String): Proxy {
+    val url = URL(proxyValue)
+    val type = if (url.protocol.contains("sock")) {
+        Proxy.Type.SOCKS
+    } else {
+        Proxy.Type.HTTP
+    }
+    return Proxy(type, InetSocketAddress(url.host, url.port))
+}
+
 fun <T : JComponent> Panel.aligned(text: String, component: T, init: Cell<T>.() -> Unit = {}) = row(text) {
     cell(component).align(AlignX.FILL).init()
 }
@@ -146,13 +188,7 @@ class QuickStarterModel(private val propertyGraph: PropertyGraph, private val wi
 
         try {
             val proxy = if (useProxyProperty.get()) {
-                val url = URL(proxyValueProperty.get())
-                val type = if (url.protocol.contains("sock")) {
-                    Proxy.Type.SOCKS
-                } else {
-                    Proxy.Type.HTTP
-                }
-                Proxy(type, InetSocketAddress(url.host, url.port))
+                proxyFromUrl(proxyValueProperty.get())
             } else {
                 null
             }
@@ -196,21 +232,8 @@ class QuickStarterModel(private val propertyGraph: PropertyGraph, private val wi
 
     fun lakeCommandForComment(): String = "Command to create project: ${lakeCommand()}"
 
-    fun lakeCommand(): String {
-        val commandBuilder = StringBuilder("lake new ${entityNameProperty.get()}")
-        val isDefaultTemplate = templatesProperty.get() == QuickStarterModel.TEMPLATES[0]
-        val isDefaultLanguage = languagesProperty.get() == QuickStarterModel.LANGUAGES[0]
-        if (!isDefaultTemplate) {
-            commandBuilder.append(" ${templatesProperty.get()}")
-        }
-        if (!isDefaultLanguage) {
-            if (isDefaultTemplate) {
-                commandBuilder.append(" ")
-            }
-            commandBuilder.append(".${languagesProperty.get()}")
-        }
-        return commandBuilder.toString()
-    }
+    fun lakeCommand(): String =
+        buildLakeCommand(entityNameProperty.get(), templatesProperty.get(), languagesProperty.get())
 }
 
 class QuickStarterPanel(private val model: QuickStarterModel) {

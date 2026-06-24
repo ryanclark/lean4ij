@@ -22,6 +22,21 @@ import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.isRegularFile
 
+/**
+ * Pure transform from a lean-toolchain string to the directory name used under
+ * `$HOME/.elan/toolchains/`. Extracted from [SdkService.getHomePath] to allow
+ * characterization testing without an Application/Project.
+ */
+internal fun mangleToolchainDir(toolchain: String): String =
+    toolchain.replace("/", "--").replace(":", "---")
+
+/**
+ * Pure transform from a lean-toolchain string to the SDK display name.
+ * Extracted from [SdkService.setupModule] to allow characterization testing.
+ */
+internal fun toolchainSdkName(toolchain: String): String =
+    toolchain.split('/').last().replace(':', ' ')
+
 @Service(Service.Level.PROJECT)
 class SdkService(private val project: Project) {
 
@@ -50,7 +65,7 @@ class SdkService(private val project: Project) {
      * TODO this is duplicated with [lean4ij.lsp.LeanLanguageServerProvider.setServerCommand]
      */
     fun getHomePath(toolchain: String): Path? {
-        val toolchainDir = toolchain.replace("/", "--").replace(":", "---")
+        val toolchainDir = mangleToolchainDir(toolchain)
         // toolchain path is $HOME/.elan/toolchains/<toolchainDir>
         val toolchainPath = Path.of(System.getProperty("user.home"), ".elan", "toolchains", toolchainDir)
         if (!toolchainPath.exists()) {
@@ -70,7 +85,7 @@ class SdkService(private val project: Project) {
         val application = ApplicationManager.getApplication()
         val toolchain = getLeanVersion() ?: return
         val toolchainPath = getHomePath(toolchain)?.toString() ?: return
-        val sdkName = toolchain.split('/').last().replace(':', ' ')
+        val sdkName = toolchainSdkName(toolchain)
         var sdk: Sdk? = ProjectJdkTable.getInstance().findJdk(sdkName)
         if (sdk == null) {
             // Create the SDK in a write action. invokeAndWait + a holder works whether setupModule runs on the

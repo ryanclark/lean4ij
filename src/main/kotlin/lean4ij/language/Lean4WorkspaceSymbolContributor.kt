@@ -101,9 +101,32 @@ class Lean4WorkspaceSymbolContributor : Lean4ChooseByNameContributorEx() {
     }
 }
 
+/**
+ * Pure predicate for [Lean4WorkspaceClassContributor.filter]: a symbol is treated as a class
+ * when the last dotted segment of its (qualified) name starts with an uppercase character.
+ * Extracted so the logic can be characterized without constructing a [LeanWorkspaceSymbolData]
+ * (whose initialization needs a live IDE/Application).
+ */
+internal fun isClassSymbolName(name: String): Boolean =
+    name.split(".").last().let { it[0].isUpperCase() }
+
+/**
+ * Pure suffix-trigger predicate for [WorkspaceSymbolsCache.canTrigger]: a query triggers a
+ * workspace request once it ends with the configured trigger suffix.
+ */
+internal fun queryCanTrigger(queryString: String, suffix: String): Boolean =
+    queryString.endsWith(suffix)
+
+/**
+ * Pure query normalization for [WorkspaceSymbolsCache.normalize]: strip the configured trigger
+ * suffix off the end of the query before sending/looking up the symbols request.
+ */
+internal fun normalizeQuery(queryString: String, suffix: String): String =
+    queryString.removeSuffix(suffix)
+
 class Lean4WorkspaceClassContributor : Lean4ChooseByNameContributorEx() {
     override fun filter(data: LeanWorkspaceSymbolData): Boolean {
-        return data.name.split(".").last().let { it[0].isUpperCase() }
+        return isClassSymbolName(data.name)
     }
 }
 
@@ -189,9 +212,9 @@ class WorkspaceSymbolsCache(private val project: Project) {
         .expireAfterWrite(Duration.ofMinutes(1))
         .build(WorkspaceSymbolsCacheLoader(project))
 
-    private fun canTrigger(queryString: String) = queryString.endsWith(lean4Settings.workspaceSymbolTriggerSuffix)
+    private fun canTrigger(queryString: String) = queryCanTrigger(queryString, lean4Settings.workspaceSymbolTriggerSuffix)
 
-    private fun normalize(queryString: String) = queryString.removeSuffix(lean4Settings.workspaceSymbolTriggerSuffix)
+    private fun normalize(queryString: String) = normalizeQuery(queryString, lean4Settings.workspaceSymbolTriggerSuffix)
 
     fun getWorkspaceSymbolsTriggeredBySuffix(queryString: String): List<LeanWorkspaceSymbolData> {
         if (canTrigger(queryString)) {
