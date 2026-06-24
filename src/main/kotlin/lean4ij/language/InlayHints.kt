@@ -31,6 +31,7 @@ import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.jetbrains.rd.util.lifetime.intersect
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
@@ -102,7 +103,15 @@ class HintSet {
 }
 
 class HintCache {
-    var ongoingCache = ConcurrentHashMap<LeanFile, Pair<Long, CompletableFuture<HintSet>>>()
+    // Holds one file/version's in-flight computation: the future served to the UI AND the coroutine Job
+    // driving it. Cancelling only the future (as before) left the superseded coroutine running its full
+    // per-match LSP fan-out; cancelling the Job unwinds it at the next RPC suspension point. @Volatile job
+    // because it is attached just after insert() and read by query()/insert() from other threads.
+    class OngoingHint(val time: Long, val future: CompletableFuture<HintSet>) {
+        @Volatile var job: Job? = null
+    }
+
+    var ongoingCache = ConcurrentHashMap<LeanFile, OngoingHint>()
     // items that may not be valid
     // but they are complete and can be used at the very least
     var dirtyCache = ConcurrentHashMap<LeanFile, HintSet>()
@@ -112,19 +121,24 @@ class HintCache {
         val cur = ongoingCache[file] ?: return null
 
         // we do not have a run scheduled for this version
-        if (cur.first != time) {
-            cur.second.cancel(true)
-
+        if (cur.time != time) {
+            cur.future.cancel(true)
+            cur.job?.cancel()
             return null
         }
         else {
-            return cur.second
+            return cur.future
         }
     }
 
-    fun insert(file: LeanFile, time: Long, hints: CompletableFuture<HintSet>) {
-        ongoingCache[file]?.second?.cancel(true);
-        ongoingCache[file] = Pair(time, hints)
+    /** Registers the slot for (file, time) and returns it so the caller can attach the driving Job. */
+    fun insert(file: LeanFile, time: Long, hints: CompletableFuture<HintSet>): OngoingHint {
+        val slot = OngoingHint(time, hints)
+        ongoingCache.put(file, slot)?.let {
+            it.future.cancel(true)
+            it.job?.cancel()
+        }
+        return slot
     }
 
     fun queryDirty(file: LeanFile): HintSet? {
@@ -141,7 +155,7 @@ class HintCache {
      * avoid clobbering a newer in-flight computation.
      */
     fun evict(file: LeanFile, time: Long) {
-        ongoingCache.computeIfPresent(file) { _, cur -> if (cur.first == time) null else cur }
+        ongoingCache.computeIfPresent(file) { _, cur -> if (cur.time == time) null else cur }
     }
 }
 
@@ -193,8 +207,10 @@ abstract class InlayHintBase(protected val editor: Editor, protected val project
         else {
             // recompute
             hints = CompletableFuture<HintSet>()
-            hintCache.insert(leanFile, time, hints)
-            leanProject.scope.launch {
+            // Register the slot, then attach the driving Job so a supersede (query/insert on a newer version)
+            // can cancel the coroutine - not just the future - and stop the stale LSP fan-out.
+            val slot = hintCache.insert(leanFile, time, hints)
+            slot.job = leanProject.scope.launch {
                 try {
                     // document.text must be read under a read lock; reading it off this background coroutine
                     // without one races concurrent document mutations.
@@ -370,7 +386,7 @@ class GoalInlayHintsCollector(editor: Editor, project: Project?) : InlayHintBase
         for (m in lean4Settings.getCommentPrefixForGoalHintRegex().findAll(content)) {
             val session = file.getSession()
 
-            val lineColumn = StringUtil.offsetToLineColumn(content, m.range.last)
+            val lineColumn = StringUtil.offsetToLineColumn(content, m.range.last) ?: continue
 
             val position = Position(line = lineColumn.line, character = lineColumn.column)
             val textDocument = TextDocumentIdentifier(LspUtil.quote(file.virtualFile!!.path))
@@ -443,7 +459,7 @@ class PlaceHolderInlayHintsCollector(editor: Editor, project: Project?) : InlayH
         val languageServer = leanProject.languageServerForFile(quoted).await().languageServer
         val textDocument = TextDocumentIdentifier(quoted)
         for (m in PLACEHOLDER_REGEX.findAll(content)) {
-            val lineColumn = StringUtil.offsetToLineColumn(content, m.range.first)
+            val lineColumn = StringUtil.offsetToLineColumn(content, m.range.first) ?: continue
             // A second Position type (lean4ij.lsp.data.Position) is imported, so qualify the lsp4j one here.
             val position = org.eclipse.lsp4j.Position(lineColumn.line, lineColumn.column)
             val hover = languageServer.hover(HoverParams(textDocument, position)).await()

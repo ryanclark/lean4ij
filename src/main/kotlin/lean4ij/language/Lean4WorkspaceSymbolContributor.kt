@@ -213,9 +213,30 @@ class WorkspaceSymbolsCache(private val project: Project) {
 
     private fun normalize(queryString: String) = normalizeQuery(queryString, lean4Settings.workspaceSymbolTriggerSuffix)
 
+    /**
+     * [LoadingCache.get] but never propagates a loader failure to the platform-invoked contributor (which
+     * would surface as an IDE error). Cache-loader exceptions are downgraded to info, matching the original
+     * debounce-path handling; returns null on failure.
+     */
+    private fun safeGet(key: String): List<LeanWorkspaceSymbolData>? {
+        return try {
+            symbolsCache.get(key)
+        } catch (e: Exception) {
+            when {
+                e is ExecutionException || e is UncheckedExecutionException || e is ExecutionError ->
+                    thisLogger().info(e)
+                else ->
+                    thisLogger().error(e)
+            }
+            null
+        }
+    }
+
     fun getWorkspaceSymbolsTriggeredBySuffix(queryString: String): List<LeanWorkspaceSymbolData> {
         if (canTrigger(queryString)) {
-            symbolsCache.get(normalize(queryString))
+            // Was an unguarded symbolsCache.get(): the loader can throw (e.g. server not ready -> the
+            // IllegalStateException), which on this path propagated out of processNames as an IDE error.
+            safeGet(normalize(queryString))
             return listOf()
         }
         // immediately return if the cache contains it
@@ -251,23 +272,13 @@ class WorkspaceSymbolsCache(private val project: Project) {
                 return listOf()
             }
         }
-        try {
-            // TODO here it in fact cannot be null
-            val symbolDataList = symbolsCache.get(queryString) ?: return listOf()
-            for (symbolData in symbolDataList) {
-                // put all entries in the symbolsCache, for IJ seems making request to the returned entries too
-                symbolData.name.let { symbolsCache.put(it, listOf(symbolData)) }
-            }
-            return symbolDataList
-        } catch (e: Exception) {
-            when {
-                e is ExecutionException || e is UncheckedExecutionException || e is ExecutionError ->
-                    thisLogger().info(e)
-                else ->
-                    thisLogger().error(e)
-            }
-            return listOf()
+        // TODO here it in fact cannot be null
+        val symbolDataList = safeGet(queryString) ?: return listOf()
+        for (symbolData in symbolDataList) {
+            // put all entries in the symbolsCache, for IJ seems making request to the returned entries too
+            symbolData.name.let { symbolsCache.put(it, listOf(symbolData)) }
         }
+        return symbolDataList
     }
 
     fun getWorkspaceSymbols(queryString: String): List<LeanWorkspaceSymbolData> {

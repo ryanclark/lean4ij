@@ -15,7 +15,6 @@ import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.SymbolKind
 import java.io.File
-import java.util.*
 import javax.swing.Icon
 
 /**
