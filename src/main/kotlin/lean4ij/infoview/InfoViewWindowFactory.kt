@@ -3,6 +3,7 @@ package lean4ij.infoview
 import com.intellij.openapi.actionSystem.ActionManager
 import com.intellij.openapi.actionSystem.ActionToolbar
 import com.intellij.openapi.actionSystem.DefaultActionGroup
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.components.service
@@ -200,6 +201,9 @@ class InfoViewWindowFactory : ToolWindowFactory {
             //      or, is there better way to do it
             val leanInfoViewWindow = LeanInfoViewWindow(toolWindow)
             val content = ContentFactory.getInstance().createContent(leanInfoViewWindow, null, false)
+            // Tie the window's editors to the content's lifecycle so they are released when the tool window
+            // content is removed (createViewer must be matched by releaseEditor).
+            Disposer.register(content, leanInfoViewWindow)
             toolWindow.contentManager.addContent(content)
             val leanInfoviewService = project.service<LeanInfoviewService>()
             leanInfoviewService.actionToolbar = configureToolbar(project, toolWindow)

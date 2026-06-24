@@ -1,12 +1,12 @@
 package lean4ij.infoview
 
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.components.service
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.ScrollType
 import com.intellij.openapi.editor.event.EditorMouseListener
-import com.intellij.openapi.editor.event.EditorMouseMotionListener
 import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.editor.impl.DocumentImpl
 import com.intellij.openapi.externalSystem.autoimport.AutoImportProjectTracker
@@ -16,6 +16,7 @@ import com.intellij.openapi.wm.ToolWindow
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import lean4ij.infoview.dsl.clearFoldListeners
 import lean4ij.project.LeanProjectService
 import javax.swing.BorderFactory
 
@@ -65,11 +66,18 @@ class InfoViewEditorFactory(val project: Project) {
  * check :https://plugins.jetbrains.com/docs/intellij/kotlin-ui-dsl-version-2.html#ui-dsl-basics
  * for some cleaner way to write ui stuff
  */
-class LeanInfoViewWindow(val toolWindow: ToolWindow) : SimpleToolWindowPanel(true) {
-    /**
-     * TODO make this private
-     */
-    private val editor : CompletableDeferred<EditorEx> = CompletableDeferred()
+class LeanInfoViewWindow(val toolWindow: ToolWindow) : SimpleToolWindowPanel(true), Disposable {
+    // var (not val) so restartEditor can publish a fresh editor: CompletableDeferred.complete is a no-op once
+    // completed, so a restart must swap in a new deferred rather than re-completing this one.
+    private var editor : CompletableDeferred<EditorEx> = CompletableDeferred()
+
+    // The editors actually created, tracked so dispose()/restartEditor can release them. createViewer must be
+    // matched by EditorFactory.releaseEditor or the EditorView leaks under ROOT_DISPOSABLE.
+    private var currentEditor: EditorEx? = null
+    private var currentPopupEditor: EditorEx? = null
+
+    @Volatile
+    private var disposed = false
 
     suspend fun getEditor(): EditorEx {
         return editor.await()
@@ -87,14 +95,25 @@ class LeanInfoViewWindow(val toolWindow: ToolWindow) : SimpleToolWindowPanel(tru
             try {
                 val editor0 = InfoViewEditorFactory(toolWindow.project).createEditor()
                 installPopupHandler(editor0)
-
+                if (disposed) {
+                    // Content was disposed before this editor finished creating; release it rather than leak it.
+                    EditorFactory.getInstance().releaseEditor(editor0)
+                    return@launch
+                }
+                currentEditor = editor0
                 editor.complete(editor0)
             } catch (ex: Throwable) {
                 // TODO should here log?
                 editor.completeExceptionally(ex)
             }
             try {
-                popupEditor.complete(InfoViewEditorFactory(toolWindow.project).createEditor(true))
+                val popup = InfoViewEditorFactory(toolWindow.project).createEditor(true)
+                if (disposed) {
+                    EditorFactory.getInstance().releaseEditor(popup)
+                    return@launch
+                }
+                currentPopupEditor = popup
+                popupEditor.complete(popup)
             } catch (ex: Throwable) {
                 // TODO should here log?
                 popupEditor.completeExceptionally(ex)
@@ -166,6 +185,8 @@ class LeanInfoViewWindow(val toolWindow: ToolWindow) : SimpleToolWindowPanel(tru
         //      check if multiple editors would leak or not
         if (mouseMotionListener != null) {
             editorEx.removeEditorMouseMotionListener(mouseMotionListener!!)
+            // Removing it from the editor does not stop its hover coroutine; cancel that too.
+            mouseMotionListener!!.dispose()
         }
         // TODO this can be refactored to the InfoviewRender class, in that way the definition of hovering
         //      can be done in the same time when the rendering is defined
@@ -180,14 +201,35 @@ class LeanInfoViewWindow(val toolWindow: ToolWindow) : SimpleToolWindowPanel(tru
         editorEx.addEditorMouseListener(mouseListener!!)
     }
 
-    private var mouseMotionListener : EditorMouseMotionListener? = null
+    private var mouseMotionListener : InfoviewMouseMotionListener? = null
 
     private var mouseListener : EditorMouseListener? = null
 
     fun restartEditor() {
         leanProject.scope.launch(Dispatchers.EDT) {
-            editor.complete(InfoViewEditorFactory(toolWindow.project).createEditor())
+            if (disposed || project.isDisposed) return@launch
+            // complete() is a no-op once the deferred is completed, so re-completing would never publish the
+            // new editor and would leak it. Release the old editor and swap in a fresh, fully wired deferred.
+            val old = currentEditor
+            val newEditor = InfoViewEditorFactory(toolWindow.project).createEditor()
+            installPopupHandler(newEditor)
+            currentEditor = newEditor
+            editor = CompletableDeferred<EditorEx>().apply { complete(newEditor) }
+            old?.let { EditorFactory.getInstance().releaseEditor(it) }
         }
+    }
+
+    override fun dispose() {
+        disposed = true
+        mouseMotionListener?.dispose()
+        val factory = EditorFactory.getInstance()
+        currentEditor?.let {
+            clearFoldListeners(it)
+            factory.releaseEditor(it)
+        }
+        currentPopupEditor?.let { factory.releaseEditor(it) }
+        currentEditor = null
+        currentPopupEditor = null
     }
 
 }

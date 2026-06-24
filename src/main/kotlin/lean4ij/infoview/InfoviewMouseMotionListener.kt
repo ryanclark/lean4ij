@@ -27,10 +27,15 @@ class InfoviewMouseMotionListener(val context: LeanInfoviewContext) : EditorMous
     private var hyperLink: RangeHighlighter? = null
     private val support = EditorHyperlinkSupport.get(context.infoviewEditor)
 
-    init {
-        context.leanProject.scope.launch {
-            tryEmitHover()
-        }
+    // Launched once per listener and cancelled in dispose() when the listener is replaced. Removing the
+    // listener from the editor does not stop this while(true) receive loop, so without dispose() every
+    // goal/infoview update (each caret move) leaks this coroutine and the LeanInfoviewContext it captures.
+    private val hoverJob = context.leanProject.scope.launch {
+        tryEmitHover()
+    }
+
+    fun dispose() {
+        hoverJob.cancel()
     }
 
     private val leanInfoviewService

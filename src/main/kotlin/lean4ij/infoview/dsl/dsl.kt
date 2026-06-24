@@ -1,7 +1,10 @@
 package lean4ij.infoview.dsl
 
+import com.intellij.openapi.Disposable
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.editor.FoldRegion
 import com.intellij.openapi.editor.colors.EditorColorsManager
+import com.intellij.openapi.util.Key
 import com.intellij.openapi.editor.colors.TextAttributesKey
 import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.editor.ex.FoldingListener
@@ -16,6 +19,20 @@ import lean4ij.lsp.data.InteractiveHypothesisBundle
 import lean4ij.lsp.data.SubexprInfo
 import lean4ij.lsp.data.TaggedText
 import java.lang.ProcessHandle.Info
+
+/** Holds the [Disposable] parenting the current render's fold-state listeners; swapped each render. */
+private val FOLD_LISTENER_DISPOSABLE = Key.create<Disposable>("lean4ij.infoview.foldListenerDisposable")
+
+/**
+ * Dispose any fold-state listeners registered on [editorEx] by [InfoObjectModel.output]. Call this when the
+ * editor itself is released so the final render's listeners are not retained.
+ */
+internal fun clearFoldListeners(editorEx: EditorEx) {
+    editorEx.getUserData(FOLD_LISTENER_DISPOSABLE)?.let {
+        Disposer.dispose(it)
+        editorEx.putUserData(FOLD_LISTENER_DISPOSABLE, null)
+    }
+}
 
 fun info(click: LeanInfoviewContext.(InfoObjectModel) -> Unit, init: InfoObjectBuilder.()->Unit) : InfoObjectModel {
     val infoObjectBuilder = InfoObjectBuilder().apply {
@@ -197,6 +214,12 @@ class InfoObjectModel(
         }
         editorEx.foldingModel.runBatchFoldingOperation {
             editorEx.foldingModel.clearFoldRegions()
+            // Dispose the previous render's fold listeners before registering this render's. Previously a new
+            // FoldingListener was added per fold region on every render with a no-op disposable and never
+            // removed, so they accumulated unbounded and every stale listener fired on each fold-state change.
+            editorEx.getUserData(FOLD_LISTENER_DISPOSABLE)?.let { Disposer.dispose(it) }
+            val foldDisposable = Disposer.newDisposable("lean4ij.infoview.foldListeners")
+            editorEx.putUserData(FOLD_LISTENER_DISPOSABLE, foldDisposable)
             for (folding in foldsList) {
                 val foldRegion = editorEx.foldingModel.addFoldRegion(folding.startOffset, folding.endOffset, folding.placeholderText)
                 foldRegion?.apply {
@@ -212,9 +235,7 @@ class InfoObjectModel(
                             folding.listener?.invoke(region)
                         }
                     }
-                }) {
-                    // TODO should some disposal add here?
-                }
+                }, foldDisposable)
             }
         }
     }
