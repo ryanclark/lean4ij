@@ -78,7 +78,7 @@ class LeanRunConfiguration( project: Project, factory: ConfigurationFactory, nam
         environment: ExecutionEnvironment
     ): RunProfileState {
         val toolchainService = project.service<ToolchainService>()
-        val commandLine: GeneralCommandLine = toolchainService.commandLineForRunningLeanFile(options.fileName, options.arguments)
+        val commandLine: GeneralCommandLine = toolchainService.commandLineForRunningLeanFile(options.fileName, options.arguments, options.environments)
         return LeanRunState(commandLine, environment)
     }
 }

@@ -148,9 +148,12 @@ class WorkspaceSymbolsCacheLoader(private val project: Project) :
         } ?: return listOf()
         val items: MutableList<LeanWorkspaceSymbolData> = ArrayList()
         if (symbols.isLeft) {
-            val s = symbols.left
-            for (si in s) {
-                items.add(LeanWorkspaceSymbolData(si?.name!!, si.kind!!, si.location!!, project))
+            for (si in symbols.left) {
+                // Skip a malformed symbol rather than !! and abort the whole batch with an NPE.
+                val name = si?.name ?: continue
+                val kind = si.kind ?: continue
+                val location = si.location ?: continue
+                items.add(LeanWorkspaceSymbolData(name, kind, location, project))
             }
         } else if (symbols.isRight) {
             val ws = symbols.right

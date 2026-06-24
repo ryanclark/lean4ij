@@ -29,9 +29,9 @@ class ToggleLeanInfoViewInternal : AnAction() {
     }
 
     override fun update(e: AnActionEvent) {
-        val editor = e.dataContext.getData<Editor>(CommonDataKeys.EDITOR)?:return
-        if (!LeanUtil.isLeanFile(editor.virtualFile)) {
-            e.presentation.isVisible = false
-        }
+        // Set the flag in both branches: presentations are reused, so only ever setting isVisible=false left
+        // the action hidden after switching back to a Lean editor.
+        val editor = e.dataContext.getData<Editor>(CommonDataKeys.EDITOR)
+        e.presentation.isVisible = editor != null && LeanUtil.isLeanFile(editor.virtualFile)
     }
 }

@@ -25,7 +25,10 @@ import javax.swing.Icon
  * Right-click Run still works independently via [MainRunConfigurationProducer].
  */
 object MainRunGutter {
-    private val MAIN_DEF = Regex("""(?m)^[ \t]*def[ \t]+main\b""")
+    // Shared with MainRunConfigurationProducer so the gutter icon and the right-click Run config agree on
+    // what counts as `def main`. Horizontal whitespace only: `\s` would let `^\s*` swallow a preceding blank
+    // line and match `def`/`main` split across a newline.
+    internal val MAIN_DEF = Regex("""(?m)^[ \t]*def[ \t]+main\b""")
 
     fun install(editor: TextEditor) {
         val ed = editor.editor

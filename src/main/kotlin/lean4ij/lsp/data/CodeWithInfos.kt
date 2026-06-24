@@ -75,7 +75,10 @@ class TaggedTextText<T>(val text: String) : TaggedText<T>() where T : InfoViewCo
                 return null
             }
         }
-        return t.contextInfo(offset, parent!!.startOffset, parent!!.endOffset)
+        // `parent` is a @Transient field that is never populated on the deserialization path, so !! was a
+        // primed NPE; guard it instead.
+        val p = parent ?: return null
+        return t.contextInfo(offset, p.startOffset, p.endOffset)
     }
 }
 
@@ -196,24 +199,26 @@ class MsgEmbedTrace(
 
     override fun toInfoObjectModel(): InfoObjectModel {
         val traceModel = info {
-            if (children is StrictOrLazyLazy) {
-                p("[$cls] ", mutableListOf( Lean4TextAttributesKeys.GoalInaccessible).map { it.key }.toMutableList()) { context, model ->
-                    val parent = model.parent?:return@p
-                    context.leanProject.scope.launch {
-                        getLazyMsgEmbedTrace(context, parent)
+            when (children) {
+                is StrictOrLazyLazy -> {
+                    p("[$cls] ", mutableListOf(Lean4TextAttributesKeys.GoalInaccessible.key)) { context, model ->
+                        val parent = model.parent?:return@p
+                        context.leanProject.scope.launch {
+                            getLazyMsgEmbedTrace(context, parent)
+                        }
+                    }
+                    add(msg.toInfoObjectModel())
+                    p(" ▶") { context, model ->
+                        val parent = model.parent?:return@p
+                        context.leanProject.scope.launch {
+                            getLazyMsgEmbedTrace(context, parent)
+                        }
                     }
                 }
-                add(msg.toInfoObjectModel())
-                p(" ▶") { context, model ->
-                    val parent = model.parent?:return@p
-                    context.leanProject.scope.launch {
-                        getLazyMsgEmbedTrace(context, parent)
-                    }
+                is StrictOrLazyStrict -> {
+                    p("[$cls] ", mutableListOf(Lean4TextAttributesKeys.GoalInaccessible.key))
+                    add(msg.toInfoObjectModel())
                 }
-            }
-            if (children is StrictOrLazyStrict) {
-                p("[$cls] ", mutableListOf( Lean4TextAttributesKeys.GoalInaccessible).map { it.key }.toMutableList())
-                add(msg.toInfoObjectModel())
             }
         }
         return traceModel
@@ -234,6 +239,6 @@ class MsgUnsupported(val message: String) : MsgEmbed() {
  * This is kind of same as Either
  * Strict or lazy may largely be used by kotlin
  */
-abstract class StrictOrLazy<A, B>
+sealed class StrictOrLazy<A, B>
 data class StrictOrLazyStrict<A, B>(val strict: A) : StrictOrLazy<A, B>()
 data class StrictOrLazyLazy<A, B>(val lazy: B) : StrictOrLazy<A, B>()

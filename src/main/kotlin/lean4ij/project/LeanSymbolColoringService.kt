@@ -272,8 +272,13 @@ class LeanSymbolColoringService(private val project: Project) {
      *  toolchain under `.elan`, or simply not under [projectRoot]. Those are the "imported/stdlib" symbols. */
     private fun isExternalPath(targetReal: String?, projectRoot: String?): Boolean {
         if (targetReal == null) return true
-        if (targetReal.contains("/.lake/") || targetReal.contains("/.elan/")) return true
-        return projectRoot != null && !targetReal.startsWith(projectRoot)
+        // Normalize separators so the markers match on Windows too (toRealPath yields backslashes there).
+        val normalized = targetReal.replace('\\', '/')
+        if (normalized.contains("/.lake/") || normalized.contains("/.elan/")) return true
+        val root = projectRoot?.replace('\\', '/') ?: return false
+        // Compare by path segment (under "root/"), not a raw prefix, so /a/proj does not falsely match a
+        // sibling /a/proj-extra.
+        return normalized != root && !normalized.startsWith("$root/")
     }
 
     /** Read the lines of a `file://` URI's file, or null if it can't be read or is implausibly large. */

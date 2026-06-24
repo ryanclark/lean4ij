@@ -153,12 +153,15 @@ class ToolchainService(val project: Project) {
      * but using lake it handles the imports like Mathlib
      * TODO test arguments and working directory
      */
-    fun commandLineForRunningLeanFile(filePath: String, arguments: String = ""): GeneralCommandLine {
+    fun commandLineForRunningLeanFile(filePath: String, arguments: String = "", environments: Map<String, String> = mapOf()): GeneralCommandLine {
         val command = mutableListOf(lakePath.toString(), "env", "lean", "--run", filePath)
         if (arguments.isNotEmpty()) {
             command.addAll(arguments.split(ARGUMENT_SEPARATOR))
         }
         return GeneralCommandLine(*command.toTypedArray()).apply {
+            // Apply the user's environment variables (the Lean run-config UI exposes them); without this they
+            // were silently dropped, unlike the Lake and Elan run configs.
+            this.environment.putAll(environments)
             // Run lake from the file's own Lake package root, not the project root. In a multi-package
             // monorepo, a nested-package file (e.g. e/proofs/ttyterminal/Main.lean) must resolve its
             // package's modules (e.g. TtyTilingFfi), which are only on `lake env lean`'s search path when

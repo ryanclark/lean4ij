@@ -18,7 +18,6 @@ class MainRunConfigurationProducer : LazyRunConfigurationProducer<LeanRunConfigu
 
     companion object {
         private val LEAN_RUN_CONFIGURATION_FACTORY = LeanConfigurationFactory(LeanRunConfigurationType())
-        private val MAIN_DEF = Regex("""(?m)^\s*def\s+main\b""")
     }
 
     override fun getConfigurationFactory(): ConfigurationFactory =
@@ -44,7 +43,7 @@ class MainRunConfigurationProducer : LazyRunConfigurationProducer<LeanRunConfigu
         // Scan the document char sequence rather than PsiFile.text: this runs on every Run-context reconcile,
         // and .text materializes a full copy of the file each call.
         val content: CharSequence = containingFile.viewProvider.document?.charsSequence ?: containingFile.text
-        if (!MAIN_DEF.containsMatchIn(content)) return null
+        if (!MainRunGutter.MAIN_DEF.containsMatchIn(content)) return null
         val projectDir = context.project.guessProjectDir() ?: return null
         val name = file.toNioPath().relativeTo(projectDir.toNioPath()).toString()
         return IntermediateLeanRunConfiguration(name, file.toNioPath().toString(), "")

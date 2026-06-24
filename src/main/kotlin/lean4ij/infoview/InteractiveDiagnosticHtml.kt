@@ -129,6 +129,8 @@ private fun escapeHtml(s: String): String {
             '&' -> sb.append("&amp;")
             '<' -> sb.append("&lt;")
             '>' -> sb.append("&gt;")
+            '"' -> sb.append("&quot;")
+            '\'' -> sb.append("&#39;")
             else -> sb.append(c)
         }
     }

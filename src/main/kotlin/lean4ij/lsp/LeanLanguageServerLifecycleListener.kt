@@ -18,6 +18,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.NotificationMessage
 import org.eclipse.lsp4j.jsonrpc.messages.RequestMessage
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseMessage
 import java.lang.reflect.Proxy
+import java.util.concurrent.ConcurrentHashMap
 
 class LeanLanguageServerLifecycleListener(val project: Project) {
     private val leanProjectService: LeanProjectService = project.service()
@@ -43,12 +44,14 @@ class LeanLanguageServerLifecycleListener(val project: Project) {
         // TODO maybe reset initializedServer to null also in here?
         if (languageServer.serverStatus == ServerStatus.started) {
             languageServer.initializedServer.thenAccept {
+                if (project.isDisposed) return@thenAccept
                 leanProjectService.setInitializedServer(serverId, it)
             }
         }
     }
 
-    private val hoverRequests = mutableSetOf<String>()
+    // Mutated (add/remove/contains) from the jsonrpc reader thread; a plain HashSet races there.
+    private val hoverRequests = ConcurrentHashMap.newKeySet<String>()
 
     fun handleLSPMessage(message: Message, consumer: MessageConsumer, languageServer: LanguageServerWrapper) {
         val serverId = languageServer.serverDefinition.id
@@ -117,9 +120,12 @@ object LeanLanguageServerLifecycleListenerProxyFactory {
             return@newProxyInstance when (method.name) {
                 "handleLSPMessage" -> target.handleLSPMessage(args[0] as Message, args[1] as MessageConsumer, args[2] as LanguageServerWrapper)
                 "handleStatusChanged" -> target.handleStatusChanged(args[0] as LanguageServerWrapper)
-                else -> {
-
-                }
+                // Route Object methods explicitly so they do not return Unit (which would break the proxy's
+                // equals/hashCode/toString contract). Every other listener method is void, so Unit is ignored.
+                "toString" -> "LeanLanguageServerLifecycleListenerProxy"
+                "hashCode" -> System.identityHashCode(proxy)
+                "equals" -> proxy === args?.getOrNull(0)
+                else -> Unit
             }
         }
     }
