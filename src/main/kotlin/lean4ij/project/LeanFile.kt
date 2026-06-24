@@ -16,12 +16,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.Job
 import lean4ij.setting.Lean4Settings
 import lean4ij.infoview.InfoViewWindowFactory
 import lean4ij.infoview.MiniInfoviewService
@@ -42,8 +38,6 @@ import lean4ij.lsp.data.PlainGoalParams
 import lean4ij.lsp.data.Position
 import lean4ij.lsp.data.RpcCallParams
 import lean4ij.lsp.data.RpcCallParamsRaw
-import lean4ij.lsp.data.RpcConnectParams
-import lean4ij.lsp.data.RpcKeepAliveParams
 import lean4ij.lsp.data.TaggedText
 import lean4ij.lsp.data.DefinitionTarget
 import lean4ij.util.Constants
@@ -127,8 +121,8 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
     /** The file-progress bar + gutter markers, extracted out of this otherwise-god object. */
     private val progressRenderer = LeanFileProgressRenderer(project, scope, buildWindowService, leanProjectService, file, unquotedFile)
 
-    /** The single keep-alive loop's job (see [keepAlive]); a new session cancels the previous loop. */
-    private var keepAliveJob: Job? = null
+    /** The RPC session lifecycle (connect / keep-alive / reset), extracted out of this otherwise-god object. */
+    private val sessionManager = LeanFileSession(leanProjectService, scope, file)
 
     /**
      * current file update caret
@@ -218,62 +212,8 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
     /** See [LeanFileProgressRenderer.clearFileProgress]; called on server stop (LeanProjectService.resetServer). */
     fun clearFileProgress() = progressRenderer.clearFileProgress()
 
-    private var session : String? = null
-    private val sessionMutex : Mutex = Mutex()
-    suspend fun getSession() : String {
-        updateSession(null)
-        return session!!
-    }
-
-    /**
-     * Here the argument [oldSession] must be passed for there maybe concurrent access for updating session, for example
-     * multiple rpc calls like "Lean.Widget.getInteractiveGoals" and "Lean.Widget.getInteractiveTermGoal" and
-     * "Lean.Widget.getWidgets" etc
-     * TODO check [Mutex]'s behavior, for example: in [here](https://discuss.kotlinlang.org/t/is-it-always-safe-to-just-convert-synchronized-to-mutex-withlock/26519)
-     * TODO check if it's better way than double locking check
-     */
-    private suspend fun updateSession(oldSession: String?) {
-        if (oldSession == session) {
-            // TODO check this timeout, check the following rpcConnect for the following timeout
-            withTimeout(5*1000) {
-                sessionMutex.withLock {
-                    if (oldSession == session) {
-                        session = leanProjectService.languageServerForFile(file).await().rpcConnect(RpcConnectParams(file)).sessionId
-                        // keep alive making infoToInteractive behave better, for the reference must have the same session
-                        // as the goal result, so keep it alive here...
-                        // TODO is here will cause multiple keep alive loop?
-                        keepAlive()
-                    }
-                }
-            }
-        }
-    }
-
-
-    /**
-     * TODO maybe it should not always keep alive
-     */
-    private fun keepAlive() {
-        // Exactly one keep-alive loop per file: every session (re)connect calls this, so cancel the previous
-        // loop before starting a new one. Otherwise loops accumulate against the shared `session` field and
-        // never terminate. Launched on the project scope (not a free, never-cancelled IO scope) so it is torn
-        // down on project dispose instead of leaking for the IDE's lifetime.
-        keepAliveJob?.cancel()
-        keepAliveJob = scope.launch(Dispatchers.IO) {
-            while (true) {
-                delay(9 * 1000)
-                try {
-                    leanProjectService.languageServerForFile(file).await().rpcKeepAlive(RpcKeepAliveParams(file, session!!))
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    // Server may be restarting / the session may be stale; don't let this loop crash with
-                    // an unhandled exception (SEVERE IDE error popup). It resumes once the server is back.
-                    thisLogger().debug("rpcKeepAlive failed for $file (language server unavailable/restarting): ${e.message}")
-                }
-            }
-        }
-    }
+    /** Delegates to [LeanFileSession]; public because LeanProjectService.getSession routes through it. */
+    suspend fun getSession() : String = sessionManager.getSession()
 
     suspend fun getInteractiveGoals(params: InteractiveGoalsParams): InteractiveGoals? {
         return rpcCallWithRetry(params) {
@@ -340,8 +280,8 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
                     // Here there is a possibility that rpcCallRaw is called concurrently and all of them failed
                     // the lock in updateSession will avoid update session continuously
                     // also check the comment inside updateSession, in fact we keep it alive forever...
-                    updateSession(params.sessionId)
-                    params.sessionId = session!!
+                    sessionManager.updateSession(params.sessionId)
+                    params.sessionId = sessionManager.session!!
                     return action(params)
                 }
                 /**
@@ -363,7 +303,7 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
 
     suspend fun rpcCallRaw(params: RpcCallParamsRaw): JsonElement? {
         // always use the session in the file rather than the external infoview
-        params.sessionId = session!!
+        params.sessionId = sessionManager.session!!
         return rpcCallWithRetry(params) {
             leanProjectService.languageServerForFile(file).await().rpcCall(it)
         }
@@ -375,7 +315,7 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
     suspend fun restart() {
         FileEditorManager.getInstance(project).selectedTextEditor?.let { editor ->
             if (editor.virtualFile.path == unquotedFile) {
-                session = null
+                sessionManager.reset()
                 val languageServer = leanProjectService.languageServerForFile(file).await()
                 val didCloseParams = DidCloseTextDocumentParams(TextDocumentIdentifier(file))
                 languageServer.didClose(didCloseParams)
