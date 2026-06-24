@@ -25,7 +25,7 @@ import org.eclipse.lsp4j.TextDocumentIdentifier
  * }
  * ```
  */
-data class GetGoToLocationParamsParams(
+data class GetGoToLocationInfo(
     val kind: String,
     val info: ContextInfo
 )
@@ -34,5 +34,5 @@ class GetGoToLocationParams(
     sessionId : String,
     textDocument: TextDocumentIdentifier,
     position: Position,
-    val params: GetGoToLocationParamsParams,
+    val params: GetGoToLocationInfo,
 ) : RpcCallParams(sessionId, Constants.RPC_METHOD_GET_GOTO_LOCATION, textDocument, position)

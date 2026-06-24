@@ -9,10 +9,11 @@ import com.intellij.psi.impl.source.codeStyle.PostFormatProcessor
 
 /**
  * Conservative Lean formatter. On a whole-file Reformat Code it applies [Lean4Format.normalize] (sort
- * consecutive `import` lines, collapse blank-line runs, trim trailing whitespace), leaving expression/tactic
- * interiors byte-for-byte. Implemented as text normalization (not the block-indent engine) because Lean keeps
- * WHITE_SPACE as a PSI token for hover, which the indent engine can't manage. Partial-selection reformats are
- * left untouched to avoid corrupting a fragment.
+ * consecutive `import` lines, collapse blank-line runs, trim trailing whitespace). Token content is preserved
+ * byte-for-byte, but trailing whitespace and runs of 2+ blank lines ARE normalized document-wide, including
+ * inside expression/tactic bodies. Implemented as text normalization (not the block-indent engine) because
+ * Lean keeps WHITE_SPACE as a PSI token for hover, which the indent engine can't manage. Partial-selection
+ * reformats are left untouched to avoid corrupting a fragment.
  */
 class Lean4ImportSortPostFormatProcessor : PostFormatProcessor {
 

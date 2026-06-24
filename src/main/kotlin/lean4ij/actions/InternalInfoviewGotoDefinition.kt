@@ -9,7 +9,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import lean4ij.infoview.LeanInfoviewService
 import lean4ij.lsp.data.GetGoToLocationParams
-import lean4ij.lsp.data.GetGoToLocationParamsParams
+import lean4ij.lsp.data.GetGoToLocationInfo
 import lean4ij.project.LeanProjectService
 import lean4ij.util.LspUtil
 import org.eclipse.lsp4j.TextDocumentIdentifier
@@ -33,7 +33,7 @@ class InternalInfoviewGotoDefinition : AnAction() {
                     leanFile.getSession(),
                     textDocument,
                     context.third,
-                    GetGoToLocationParamsParams("definition", context.first)
+                    GetGoToLocationInfo("definition", context.first)
                 )
                 val targets = leanFile.getGotoLocation(params)
                 if (targets != null) {
