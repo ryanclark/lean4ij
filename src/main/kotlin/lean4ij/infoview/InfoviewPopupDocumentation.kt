@@ -122,13 +122,6 @@ class InfoviewPopupDocumentation(
     val contextInfo: ContextInfo,
     val point: RelativePoint
 ) : HyperlinkInfo {
-    companion object {
-        /**
-         * For heuristic determining the height of popup expr doc
-         * TODO should this be a config?
-         */
-        private var height: Int? = null
-    }
 
     private var popupPanel: JBPopup? = null
 
@@ -201,19 +194,6 @@ class InfoviewPopupDocumentation(
         return docPanel
     }
 
-
-    /**
-     * TODO the width is still not the best
-     * check com.intellij.codeInsight.documentation.DocumentationEditorPane#getPreferredContentWidth ...
-     * or use document directly
-     */
-    fun createExprPanel(typeAndExpr: String): JEditorPane {
-        val toolWindowSize = toolWindow.toolWindow.component.size
-        val maxWidth = toolWindowSize.width * 8 / 10
-        val maxHeight = toolWindowSize.height * 8 / 10
-        var exprPane = InfoviewPopupEditorPane(typeAndExpr, maxWidth, maxHeight)
-        return exprPane
-    }
 
     /**
      * TODO check [com.intellij.codeInsight.documentation.DocumentationScrollPane.setViewportView]

@@ -85,10 +85,11 @@ class SdkService(private val project: Project) {
                         newSdk.sdkModificator.run {
                             // TODO showing homePath in external library seems cumbersome
                             // homePath = toolchainPath
-                            addRoot(
-                                VfsUtil.findFile(Path.of(toolchainPath, "src", "lean"), true)!!,
-                                OrderRootType.CLASSES
-                            )
+                            // A release toolchain may ship without src/lean; skip the CLASSES root rather than
+                            // crash SDK creation with an NPE inside the write action.
+                            VfsUtil.findFile(Path.of(toolchainPath, "src", "lean"), true)?.let { srcRoot ->
+                                addRoot(srcRoot, OrderRootType.CLASSES)
+                            }
                             commitChanges()
                         }
                         addJdk(newSdk)
@@ -116,12 +117,7 @@ class SdkService(private val project: Project) {
                             val lakePath = Paths.get(basePath, ".lake")
                             // This path can be not exist for the first setup, in the case we skip adding it to exclude folder
                             if (lakePath.exists()) {
-                                addExcludeFolder(
-                                    VfsUtil.findFile(
-                                        Paths.get(basePath, ".lake"),
-                                        true
-                                    )!!
-                                )
+                                VfsUtil.findFile(Paths.get(basePath, ".lake"), true)?.let { addExcludeFolder(it) }
                             }
                         }
                     }
