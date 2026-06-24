@@ -1,7 +1,6 @@
 package lean4ij.infoview.external
 
 import com.google.gson.Gson
-import com.google.gson.JsonElement
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.diagnostic.thisLogger
@@ -20,8 +19,8 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.server.websocket.*
 import io.ktor.websocket.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import lean4ij.infoview.Lean4TextAttributesKeys
@@ -36,6 +35,11 @@ import lean4ij.util.fromJson
 import java.awt.Color
 
 private val logger = logger<ExternalInfoViewService>()
+
+// Single reusable Gson for the websocket wire protocol. Gson is thread-safe and reusable, so the previous
+// `Gson()` per send was wasteful allocation on a hot path. Kept a plain Gson (not LeanLanguageServer.gson) to
+// preserve the exact serialization the JCEF frontend already parses.
+private val gson = Gson()
 
 /**
  * copy from https://github.com/ktorio/ktor-samples/blob/main/sse/src/main/kotlin/io/ktor/samples/sse/SseApplication.kt
@@ -73,7 +77,6 @@ fun externalInfoViewRoute(project: Project, service : ExternalInfoViewService) :
             true
         }
     }
-    val scopeIO = CoroutineScope(Dispatchers.IO)
 
     /**
      * TODO here in fact it can raise exception, and makes the frontend stuck at waiting for server
@@ -121,6 +124,9 @@ fun externalInfoViewRoute(project: Project, service : ExternalInfoViewService) :
      * TODO weird, sometimes it seems that all messages no result?
      */
     webSocket("/ws") {
+        // The websocket session is itself a CoroutineScope; theme-update sends launch on it (not a free,
+        // never-cancelled CoroutineScope(Dispatchers.IO)) so they are cancelled when the connection closes.
+        val sessionScope: CoroutineScope = this
         // One MessageBusConnection per websocket connection, disconnected in finally below. Otherwise every
         // browser tab / infoview reconnect leaks a permanent EditorColorsListener for the project's lifetime.
         val themeBusConnection = project.messageBus.connect()
@@ -130,24 +136,24 @@ fun externalInfoViewRoute(project: Project, service : ExternalInfoViewService) :
                 //      in a large chance it's caused by the client closing the connection
                 try {
                     val theme = createThemeCss(EditorColorsManager.getInstance().globalScheme)
-                    sendWithLog(Gson().toJson(InfoviewEvent("updateTheme", mapOf("theme" to theme))))
+                    sendWithLog(gson.toJson(InfoviewEvent("updateTheme", mapOf("theme" to theme))))
 
                     themeBusConnection.subscribe<EditorColorsListener>(EditorColorsManager.TOPIC, EditorColorsListener {
                         val scheme = it ?: EditorColorsManager.getInstance().globalScheme
-                        scopeIO.launch {
+                        sessionScope.launch {
                             @Suppress("NAME_SHADOWING")
-                            val themeJson = Gson().toJson(InfoviewEvent("updateTheme", mapOf("theme" to createThemeCss(scheme))))
+                            val themeJson = gson.toJson(InfoviewEvent("updateTheme", mapOf("theme" to createThemeCss(scheme))))
                             logger.trace(themeJson)
                             sendWithLog(themeJson)
                         }
                     })
 
                     val serverRestarted = service.awaitInitializedResult()
-                    sendWithLog(Gson().toJson(InfoviewEvent("serverRestarted", serverRestarted)))
+                    sendWithLog(gson.toJson(InfoviewEvent("serverRestarted", serverRestarted)))
                     service.previousCursorLocation?.let {
                         // This is for showing the goal without moving the cursor at the startup
                         // TODO this should be handled earlier
-                        sendWithLog(Gson().toJson(InfoviewEvent("changedCursorLocation", it)))
+                        sendWithLog(gson.toJson(InfoviewEvent("changedCursorLocation", it)))
                     }
                     // here it's kind of lazy accessing LeanProjectService here directly
                     // TODO here we send all old notificationMessages to new connections that
@@ -161,11 +167,16 @@ fun externalInfoViewRoute(project: Project, service : ExternalInfoViewService) :
                     // TODO it seems still not resolved, and the ConcurrentModificationException comes from Gson serialization, which means that something is changing some NotificationMessage?
                     val copiedMessages = service.notificationMessages.toList()
                     copiedMessages.forEach {
-                        sendWithLog(Gson().toJson(it))
+                        sendWithLog(gson.toJson(it))
                     }
                     service.events().collect {
-                        sendWithLog(Gson().toJson(it))
+                        sendWithLog(gson.toJson(it))
                     }
+                } catch (e: CancellationException) {
+                    // Normal teardown: the reader loop below cancels this job when the client disconnects. The
+                    // job is usually suspended in events().collect (a SharedFlow that never completes), so the
+                    // cancellation surfaces here; rethrow it instead of logging it as a SEVERE error.
+                    throw e
                 } catch (e: Exception) {
                     thisLogger().error(e)
                 }
@@ -183,10 +194,19 @@ fun externalInfoViewRoute(project: Project, service : ExternalInfoViewService) :
                         val (requestId, method, data) = text.split(",", limit = 3)
                         if (method == "createRpcSession") {
                             launch {
-                                val params: RpcConnectParams = fromJson(data)
-                                val session = service.getSession(params.uri)
-                                val resp = mapOf("requestId" to requestId.toInt(), "method" to "rpcResponse", "data" to session)
-                                sendWithLog(Gson().toJson(resp))
+                                // Guard like sendClientRequest below: requestId.toInt()/fromJson/getSession can
+                                // throw, and an uncaught throw in this child coroutine would cancel the whole
+                                // websocket session (and its siblings) instead of just failing this request.
+                                try {
+                                    val params: RpcConnectParams = fromJson(data)
+                                    val session = service.getSession(params.uri)
+                                    val resp = mapOf("requestId" to requestId.toInt(), "method" to "rpcResponse", "data" to session)
+                                    sendWithLog(gson.toJson(resp))
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    thisLogger().error(e)
+                                }
                             }
                         }
                         // TODO better route than using string match
@@ -200,7 +220,9 @@ fun externalInfoViewRoute(project: Project, service : ExternalInfoViewService) :
                                         project.service<LeanProjectService>().getGoToLocation(targets)
                                     }
                                     val resp = mapOf("requestId" to requestId.toInt(), "method" to "rpcResponse", "data" to ret)
-                                    sendWithLog(Gson().toJson(resp))
+                                    sendWithLog(gson.toJson(resp))
+                                } catch (e: CancellationException) {
+                                    throw e
                                 } catch (e: Exception) {
                                     // TODO handle it seriously
                                     e.printStackTrace()
@@ -212,10 +234,18 @@ fun externalInfoViewRoute(project: Project, service : ExternalInfoViewService) :
                         }
                         if (method == "applyEdit") {
                             launch {
-                                val params : ApplyEditParam = fromJson(data)
-                                val ret = service.applyEdit(params)
-                                val resp = mapOf("requestId" to requestId.toInt(), "method" to "rpcResponse", "data" to ret)
-                                sendWithLog(Gson().toJson(resp))
+                                // Same guard as createRpcSession/sendClientRequest: keep one bad message from
+                                // tearing down the whole websocket session.
+                                try {
+                                    val params : ApplyEditParam = fromJson(data)
+                                    val ret = service.applyEdit(params)
+                                    val resp = mapOf("requestId" to requestId.toInt(), "method" to "rpcResponse", "data" to ret)
+                                    sendWithLog(gson.toJson(resp))
+                                } catch (e: CancellationException) {
+                                    throw e
+                                } catch (e: Exception) {
+                                    thisLogger().error(e)
+                                }
                             }
                         }
                     }
@@ -232,6 +262,8 @@ fun externalInfoViewRoute(project: Project, service : ExternalInfoViewService) :
                 outgoingJob.cancel()
             }
             outgoingJob.join()
+        } catch (ex: CancellationException) {
+            throw ex
         } catch (ex: Exception) {
             ex.cause?.cause?.printStackTrace()
             ex.cause?.printStackTrace()
@@ -273,7 +305,7 @@ fun createThemeCss(scheme: EditorColorsScheme) : String {
           "--vscode-goal-inaccessible": "DEFAULT_LINE_COMMENT.foreground"
         }
     """.trimIndent()
-    val theme = Gson().fromJson(themeStr, Map::class.java) as Map<String, String>
+    val theme = gson.fromJson(themeStr, Map::class.java) as Map<String, String>
     val themeSb = StringBuilder()
     theme.forEach { (t, u) ->
         if (!u.contains(".")) {

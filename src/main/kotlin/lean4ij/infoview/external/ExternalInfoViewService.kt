@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.google.gson.JsonElement
 import com.intellij.notification.BrowseNotificationAction
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
@@ -196,10 +197,18 @@ class ExternalInfoViewService(val project: Project) : Disposable {
     }
 
     override fun dispose() {
-        // Stop Netty so its event-loop threads and the bound TCP port are released on project close. The
-        // caretEvent/serverEvent collectors run on leanProjectService.scope and are cancelled on dispose.
-        embeddedServer?.stop(1000, 2000)
+        // Stop Netty so its event-loop threads and the bound TCP port are released on project close. stop()
+        // blocks the caller until shutdown (up to ~2s), and project-service dispose runs on the EDT, so do it
+        // off the EDT to avoid freezing the UI on close. The caretEvent/serverEvent collectors run on
+        // leanProjectService.scope and are cancelled independently on dispose, so stop ordering is not
+        // load-bearing.
+        val server = embeddedServer
         embeddedServer = null
+        if (server != null) {
+            ApplicationManager.getApplication().executeOnPooledThread {
+                server.stop(1000, 2000)
+            }
+        }
     }
 }
 

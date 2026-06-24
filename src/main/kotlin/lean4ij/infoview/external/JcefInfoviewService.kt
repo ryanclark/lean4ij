@@ -87,9 +87,10 @@ class JcefInfoviewService(private val project: Project) : Disposable {
             }
         })
         project.leanProjectScope.launch {
-            // TODO should this be stopped sometime? like many other infinite loops
-            while (true) {
-                val text = searchTextFlow.receive()
+            // Iterate with for-in: when dispose() closes searchTextFlow this loop ends cleanly, instead of a
+            // suspended receive() throwing ClosedReceiveChannelException out of the coroutine (which is not a
+            // CancellationException, so the service scope logs it as an uncaught exception on teardown).
+            for (text in searchTextFlow) {
                 if (text.isEmpty()) {
                     browser?.cefBrowser?.stopFinding(true)
                 } else {
