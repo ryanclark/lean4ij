@@ -20,14 +20,12 @@ import com.intellij.ide.wizard.GeneratorNewProjectWizardBuilderAdapter
 import com.intellij.ide.wizard.NewProjectWizardStep
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
-import com.intellij.openapi.components.BaseState
 import com.intellij.openapi.components.service
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.execution.configurations.ConfigurationTypeUtil;
 import com.intellij.execution.executors.DefaultRunExecutor
 import com.intellij.openapi.observable.properties.GraphProperty
 import com.intellij.openapi.observable.properties.PropertyGraph
-import com.intellij.openapi.observable.util.joinCanonicalPath
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.BrowseFolderDescriptor.Companion.withPathToTextConvertor
 import com.intellij.openapi.ui.BrowseFolderDescriptor.Companion.withTextToPathConvertor
@@ -44,10 +42,8 @@ import com.intellij.openapi.ui.getPresentablePath
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.UserDataHolder
 import com.intellij.openapi.util.UserDataHolderBase
-import com.intellij.openapi.util.io.FileUtil
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.wm.ToolWindowManager
-import com.intellij.ui.UIBundle
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.AlignY
 import com.intellij.ui.dsl.builder.Cell
@@ -69,171 +65,14 @@ import lean4ij.util.execute
 import java.awt.Color
 import java.awt.TextField
 import java.io.File
-import java.net.ConnectException
-import java.net.InetSocketAddress
 import java.net.Proxy
-import java.net.URL
 import java.nio.file.Path
 import javax.swing.Icon
 import javax.swing.JComponent
 import kotlin.concurrent.timerTask
 
-val QUICK_STARTER_MODEL_KEY = Key<GraphProperty<QuickStarterModel?>>("lean4_quick_starter_model")
-
-/**
- * Pure `lake new` command string builder. Extracted from [QuickStarterModel.lakeCommand]
- * so the (default-vs-non-default template/language) branching can be characterization tested
- * without a live PropertyGraph/WizardContext.
- *
- * [template] is compared against [QuickStarterModel.TEMPLATES]`[0]` and [language] against
- * [QuickStarterModel.LANGUAGES]`[0]` to decide which suffixes to append.
- */
-internal fun buildLakeCommand(entityName: String, template: String, language: String): String {
-    val commandBuilder = StringBuilder("lake new $entityName")
-    val isDefaultTemplate = template == QuickStarterModel.TEMPLATES[0]
-    val isDefaultLanguage = language == QuickStarterModel.LANGUAGES[0]
-    if (!isDefaultTemplate) {
-        commandBuilder.append(" $template")
-    }
-    if (!isDefaultLanguage) {
-        if (isDefaultTemplate) {
-            commandBuilder.append(" ")
-        }
-        commandBuilder.append(".$language")
-    }
-    return commandBuilder.toString()
-}
-
-/**
- * Pure construction of a [Proxy] from a proxy URL string. Extracted from
- * [QuickStarterModel.getVersions] so the SOCKS-vs-HTTP selection and host/port wiring
- * can be characterization tested without the surrounding property graph / network call.
- *
- * Mirrors the original logic: a protocol containing "sock" yields [Proxy.Type.SOCKS],
- * otherwise [Proxy.Type.HTTP].
- */
-internal fun proxyFromUrl(proxyValue: String): Proxy {
-    val url = URL(proxyValue)
-    val type = if (url.protocol.contains("sock")) {
-        Proxy.Type.SOCKS
-    } else {
-        Proxy.Type.HTTP
-    }
-    return Proxy(type, InetSocketAddress(url.host, url.port))
-}
-
 fun <T : JComponent> Panel.aligned(text: String, component: T, init: Cell<T>.() -> Unit = {}) = row(text) {
     cell(component).align(AlignX.FILL).init()
-}
-
-class QuickStarterModel(private val propertyGraph: PropertyGraph, private val wizardContext: WizardContext) :
-    BaseState() {
-
-    companion object {
-        val TEMPLATES = listOf("std", "exe", "lib", "math")
-        val LANGUAGES = listOf("lean", "toml")
-    }
-
-    val entityNameProperty = propertyGraph.lazyProperty(::suggestName)
-    val locationProperty = propertyGraph.lazyProperty(::suggestLocationByName)
-    val fetchingTagsFromGithubProperty = propertyGraph.lazyProperty { false }
-    val fetchingTagsError = propertyGraph.lazyProperty { "" }
-    // Initialized with the local (non-network) versions. The GitHub fetch runs off the EDT in the afterChange
-    // listener in init below and is pushed back here, instead of running a blocking HTTPS request inside a
-    // synchronous property transform on the EDT, which froze the wizard for up to ~10s when the checkbox toggled.
-    val allVersionsProperty: GraphProperty<List<String>> = propertyGraph.property(getVersions(false))
-    val versionProperty = propertyGraph.lazyProperty {
-        // firstOrNull, not [0]: getVersions can return an empty list (empty toolchains.txt / empty GitHub
-        // response), which would otherwise crash the wizard UI with IndexOutOfBoundsException.
-        allVersionsProperty.get().firstOrNull() ?: ""
-    }
-    val useProxyProperty = propertyGraph.lazyProperty { false }
-    val proxyValueProperty = propertyGraph.lazyProperty { "" }
-    val canonicalPathProperty = locationProperty.joinCanonicalPath(entityNameProperty)
-    val templatesProperty = propertyGraph.property(TEMPLATES.first())
-    val languagesProperty = propertyGraph.property(LANGUAGES.first())
-
-    init {
-        // When the "fetch tags from GitHub" toggle changes, fetch off the EDT and publish the result back on
-        // the EDT (any modality, so it applies while the wizard dialog is open) so the version combobox, which
-        // observes allVersionsProperty, refreshes without freezing the wizard on the blocking HTTPS request.
-        fetchingTagsFromGithubProperty.afterChange { fromGithub ->
-            ApplicationManager.getApplication().executeOnPooledThread {
-                val versions = getVersions(fromGithub)
-                ApplicationManager.getApplication().invokeLater({
-                    allVersionsProperty.set(versions)
-                }, ModalityState.any())
-            }
-        }
-    }
-
-    private fun suggestName(): String {
-        return suggestName("Untitled")
-    }
-
-    fun suggestName(prefix: String): String {
-        val projectFileDirectory = File(wizardContext.projectFileDirectory)
-        return FileUtil.createSequentFileName(projectFileDirectory, prefix, "")
-    }
-
-    private fun suggestLocationByName(): String {
-        return wizardContext.projectFileDirectory
-    }
-
-    private fun getVersions(fromGithub : Boolean): List<String> {
-        val elanService = service<ElanService>()
-        if (!fromGithub) {
-            return elanService.toolchains(includeRemote = true)
-        }
-
-        try {
-            val proxy = if (useProxyProperty.get()) {
-                proxyFromUrl(proxyValueProperty.get())
-            } else {
-                null
-            }
-            try {
-                return elanService.toolchainsFromGithub(proxy)
-            } finally {
-                fetchingTagsError.set("")
-            }
-        } catch (e: ConnectException) {
-            fetchingTagsError.set(
-                (e.message ?: "unknown error") + ", please consider using proxy<br>fallback to preset versions"
-            )
-        } catch (e: Exception) {
-            fetchingTagsError.set((e.message ?: "unknown error") + "<br>fallback to preset versions")
-        }
-        return elanService.toolchains(includeRemote = true)
-    }
-
-    fun getLocationComment(): String {
-        val shortPath = StringUtil.shortenPathWithEllipsis(getPresentablePath(canonicalPathProperty.get()), 60)
-        return UIBundle.message(
-            "label.project.wizard.new.project.path.description",
-            wizardContext.isCreatingNewProjectInt,
-            shortPath,
-        )
-    }
-
-    fun commentForTemplate() = when (templatesProperty.get()) {
-        "std" -> "library and executable; default"
-        "exe" -> "executable only"
-        "lib" -> "library only"
-        "math" -> "library only with a mathlib dependency"
-        else -> "unrecognized template"
-    }
-
-    fun commentForConfigurationLanguage() = when (languagesProperty.get()) {
-        "lean" -> "a Lean version of the the configuration file; default"
-        "toml" -> "a TOML version of the the configuration file"
-        else -> "unrecognized language"
-    }
-
-    fun lakeCommandForComment(): String = "Command to create project: ${lakeCommand()}"
-
-    fun lakeCommand(): String =
-        buildLakeCommand(entityNameProperty.get(), templatesProperty.get(), languagesProperty.get())
 }
 
 class QuickStarterPanel(private val model: QuickStarterModel) {
