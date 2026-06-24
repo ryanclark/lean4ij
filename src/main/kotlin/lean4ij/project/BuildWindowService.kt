@@ -17,10 +17,8 @@ import com.intellij.openapi.externalSystem.model.ProjectSystemId
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskId
 import com.intellij.openapi.externalSystem.model.task.ExternalSystemTaskType
 import com.intellij.openapi.project.Project
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 open class BuildEvent(val file: String)
 class BuildStart(file: String): BuildEvent(file)
@@ -38,7 +36,9 @@ class BuildWindowService(val project: Project) {
     private val leanProject : LeanProjectService = project.service()
     private val systemId = ProjectSystemId("LEAN4")
     private val syncId = ExternalSystemTaskId.create(systemId, ExternalSystemTaskType.RESOLVE_PROJECT, project)
-    private var flow = MutableSharedFlow<BuildEvent>()
+    // UNLIMITED Channel, not a zero-buffer SharedFlow: events emitted before this collector subscribes (a
+    // startup race) would otherwise be dropped, and emit() to a zero-buffer flow blocks the producer.
+    private val events = Channel<BuildEvent>(Channel.UNLIMITED)
     private val builds = HashMap<String, BuildProgress<*>>()
 
     init {
@@ -48,12 +48,9 @@ class BuildWindowService(val project: Project) {
              * and https://github.com/JetBrains/intellij-community/blob/1d45fcdd827f7bc3fde15d7eda2b4399780fb632/platform/lang-impl/testSources/com/intellij/build/BuildViewTest.kt#L50
              */
             var progress : BuildProgress<BuildProgressDescriptor>? = null
-            val mutex = Mutex()
 
-            // TODO is the mutex here really necessary?
-            // TODO here it seems blocking a thread
-            flow.collect { s ->
-                mutex.withLock {
+            // Single collector, so `builds`/`progress` are confined to this coroutine and need no mutex.
+            for (s in events) {
                     // TODO rather than using string, use class for this
                     // TODO never mind, keep it running
                     // if (s == "--") {
@@ -114,7 +111,6 @@ class BuildWindowService(val project: Project) {
 
                         }
                     }
-                }
             }
         }
     }
@@ -133,21 +129,15 @@ class BuildWindowService(val project: Project) {
     }
 
     fun startBuild(file: String) {
-        leanProject.scope.launch {
-            flow.emit(BuildStart(leanProject.getRelativePath(LspUtil.unquote(file))))
-        }
+        events.trySend(BuildStart(leanProject.getRelativePath(LspUtil.unquote(file))))
     }
 
     fun endBuild(file: String) {
-        leanProject.scope.launch {
-            flow.emit(BuildEnd(leanProject.getRelativePath(LspUtil.unquote(file))))
-        }
+        events.trySend(BuildEnd(leanProject.getRelativePath(LspUtil.unquote(file))))
     }
 
     fun addBuildEvent(file: String, message: String) {
-        leanProject.scope.launch {
-            flow.emit(BuildMessage(leanProject.getRelativePath(LspUtil.unquote(file)), message))
-        }
+        events.trySend(BuildMessage(leanProject.getRelativePath(LspUtil.unquote(file)), message))
     }
 
 }
