@@ -1,9 +1,6 @@
 package lean4ij.util
 
 import com.intellij.openapi.vfs.VirtualFile
-import java.io.File
-import java.io.IOException
-import java.util.concurrent.TimeUnit
 
 object LeanUtil {
 

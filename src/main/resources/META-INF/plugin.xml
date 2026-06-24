@@ -42,10 +42,11 @@
         <colorSettingsPage implementation="lean4ij.infoview.LeanInfoviewColorSettingPage"/>
         <colorSettingsPage implementation="lean4ij.language.LeanColorSettingsPage"/>
 
-        <!-- Default colors for the custom Lean symbol keys: the type family (LEAN_STRUCTURE/INDUCTIVE/CLASS/
-             TYPE) gets a VS Code-style teal default in the bundled light/dark schemes; otherwise it falls back
-             to CLASS_NAME/CLASS_REFERENCE, which Darcula leaves uncolored. Overridable in
-             Settings | Editor | Color Scheme | Lean. -->
+        <!-- Default colors for the custom Lean symbol keys. The bundled light/dark schemes set
+             LEAN_CONSTRUCTOR, LEAN_THEOREM, LEAN_BUILTIN_TYPE, LEAN_IMPORTED_FUNCTION, and LEAN_COMMENT_CODE.
+             The type-family keys (LEAN_STRUCTURE/INDUCTIVE/CLASS/TYPE) are intentionally NOT set here and fall
+             back to their CLASS_NAME/CLASS_REFERENCE/INTERFACE_NAME parents (which Darcula leaves uncolored).
+             Overridable in Settings | Editor | Color Scheme | Lean. -->
         <additionalTextAttributes scheme="Default" file="colorSchemes/LeanDefault.xml"/>
         <additionalTextAttributes scheme="Darcula" file="colorSchemes/LeanDarcula.xml"/>
 

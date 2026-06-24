@@ -105,94 +105,95 @@ class Lean4WorkspaceSymbolCharacterizationTest {
     }
 
     // ---------------------------------------------------------------------------------------------
-    // queryCanTrigger / normalizeQuery: WorkspaceSymbolsCache suffix handling.
-    // Default workspaceSymbolTriggerSuffix is ",," (see Lean4Settings).
+    // queryCanTrigger / normalizeQuery: WorkspaceSymbolsCache suffix handling. These characterize the pure
+    // helpers against an arbitrary trigger suffix; they do NOT assert it equals the production default
+    // (Lean4Settings.workspaceSymbolTriggerSuffix, which happens to be ",," but needs an Application to read).
     // current logic: canTrigger  = queryString.endsWith(suffix)
     //                normalize   = queryString.removeSuffix(suffix)
     // ---------------------------------------------------------------------------------------------
 
-    private val defaultSuffix = ",,"
+    private val triggerSuffix = ",,"
 
     @Test
     fun canTrigger_queryEndingWithSuffix_triggers() {
-        assertTrue(queryCanTrigger("Nat,,", defaultSuffix))
+        assertTrue(queryCanTrigger("Nat,,", triggerSuffix))
     }
 
     @Test
     fun canTrigger_queryWithoutSuffix_doesNotTrigger() {
-        assertFalse(queryCanTrigger("Nat", defaultSuffix))
+        assertFalse(queryCanTrigger("Nat", triggerSuffix))
     }
 
     @Test
     fun canTrigger_partialSuffix_doesNotTrigger() {
         // single comma is not the two-comma suffix
-        assertFalse(queryCanTrigger("Nat,", defaultSuffix))
+        assertFalse(queryCanTrigger("Nat,", triggerSuffix))
     }
 
     @Test
     fun canTrigger_emptyQuery_doesNotTrigger() {
-        assertFalse(queryCanTrigger("", defaultSuffix))
+        assertFalse(queryCanTrigger("", triggerSuffix))
     }
 
     @Test
     fun canTrigger_queryEqualToSuffix_triggers() {
-        assertTrue(queryCanTrigger(",,", defaultSuffix))
+        assertTrue(queryCanTrigger(",,", triggerSuffix))
     }
 
     @Test
     fun canTrigger_suffixInMiddleNotAtEnd_doesNotTrigger() {
-        assertFalse(queryCanTrigger("a,,b", defaultSuffix))
+        assertFalse(queryCanTrigger("a,,b", triggerSuffix))
     }
 
     @Test
     fun canTrigger_extraTrailingComma_stillTriggers() {
         // ",,," ends with ",," -> true
-        assertTrue(queryCanTrigger("Nat,,,", defaultSuffix))
+        assertTrue(queryCanTrigger("Nat,,,", triggerSuffix))
     }
 
     @Test
     fun normalize_stripsTrailingSuffixOnce() {
-        assertEquals("Nat", normalizeQuery("Nat,,", defaultSuffix))
+        assertEquals("Nat", normalizeQuery("Nat,,", triggerSuffix))
     }
 
     @Test
     fun normalize_noSuffix_leavesQueryUnchanged() {
-        assertEquals("Nat", normalizeQuery("Nat", defaultSuffix))
+        assertEquals("Nat", normalizeQuery("Nat", triggerSuffix))
     }
 
     @Test
     fun normalize_partialSuffix_leavesQueryUnchanged() {
         // removeSuffix only strips an exact full-suffix match
-        assertEquals("Nat,", normalizeQuery("Nat,", defaultSuffix))
+        assertEquals("Nat,", normalizeQuery("Nat,", triggerSuffix))
     }
 
     @Test
     fun normalize_queryEqualToSuffix_becomesEmpty() {
-        assertEquals("", normalizeQuery(",,", defaultSuffix))
+        assertEquals("", normalizeQuery(",,", triggerSuffix))
     }
 
     @Test
     fun normalize_emptyQuery_staysEmpty() {
-        assertEquals("", normalizeQuery("", defaultSuffix))
+        assertEquals("", normalizeQuery("", triggerSuffix))
     }
 
     @Test
     fun normalize_removesSuffixOnlyOnce_notRepeatedly() {
         // removeSuffix strips a single occurrence: "Nat,,,," -> "Nat,," (NOT "Nat")
-        assertEquals("Nat,,", normalizeQuery("Nat,,,,", defaultSuffix))
+        assertEquals("Nat,,", normalizeQuery("Nat,,,,", triggerSuffix))
     }
 
     @Test
     fun normalize_suffixInMiddle_isNotStripped() {
-        assertEquals("a,,b", normalizeQuery("a,,b", defaultSuffix))
+        assertEquals("a,,b", normalizeQuery("a,,b", triggerSuffix))
     }
 
     @Test
     fun canTriggerAndNormalize_areConsistentForTriggeringQuery() {
         // a triggering query, once normalized, is exactly the query with the suffix removed
         val query = "Mathlib.CommGroup,,"
-        assertTrue(queryCanTrigger(query, defaultSuffix))
-        assertEquals("Mathlib.CommGroup", normalizeQuery(query, defaultSuffix))
+        assertTrue(queryCanTrigger(query, triggerSuffix))
+        assertEquals("Mathlib.CommGroup", normalizeQuery(query, triggerSuffix))
     }
 
     @Test

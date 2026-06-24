@@ -205,9 +205,9 @@ class Lean4WizardLogicCharacterizationTest {
 
         // The resource has no trailing newline, so split("\n") produces NO empty trailing element.
         assertFalse("split result must not contain an empty element", versions.contains(""))
-        assertEquals("v4.24.0", versions.first())
-        assertEquals("v4.0.0", versions.last())
-        assertTrue("expected a known middle version", versions.contains("v4.18.0"))
+        // Deliberately NOT pinning the exact first/last/middle version strings: toolchains.txt is pure data
+        // bumped on every Lean release, so those literals would fail spuriously even though the split("\n")
+        // transform under test is unchanged. The structural assertions below characterize the transform.
 
         // The includeRemote flag is currently ignored by toolchains(); both values are identical.
         assertEquals(versions, elan.toolchains(includeRemote = false))

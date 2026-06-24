@@ -4,6 +4,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.modules
 import com.intellij.openapi.projectRoots.ProjectJdkTable
 import com.intellij.openapi.projectRoots.Sdk
@@ -139,9 +140,15 @@ class SdkService(private val project: Project) {
                     project.save()
                 }
             }
+        } catch (e: ProcessCanceledException) {
+            // Never swallow cancellation: this runs from a cancellable startup coroutine, and the platform ops
+            // below throw ProcessCanceledException when the project is closed mid-setup. Let it propagate.
+            throw e
         } catch (e: Exception) {
             project.notifyErr("Failed to set up the SDK for $toolchain")
-            thisLogger().error(e)
+            // warn, not error: a genuine setup failure is surfaced to the user via notifyErr; logging at error
+            // additionally raises an IDE Internal Error report, which is for plugin bugs, not config failures.
+            thisLogger().warn(e)
         }
     }
 }

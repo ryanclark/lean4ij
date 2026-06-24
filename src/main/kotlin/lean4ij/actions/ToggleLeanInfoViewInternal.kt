@@ -4,7 +4,6 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
-import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.wm.ToolWindowManager
 import lean4ij.util.LeanUtil
 
@@ -31,7 +30,9 @@ class ToggleLeanInfoViewInternal : AnAction() {
     override fun update(e: AnActionEvent) {
         // Set the flag in both branches: presentations are reused, so only ever setting isVisible=false left
         // the action hidden after switching back to a Lean editor.
-        val editor = e.dataContext.getData<Editor>(CommonDataKeys.EDITOR)
-        e.presentation.isVisible = editor != null && LeanUtil.isLeanFile(editor.virtualFile)
+        // editor.virtualFile is platform-nullable (null for console/diff/in-memory editors); guard it before
+        // isLeanFile, which takes a non-null VirtualFile, matching the sibling ToggleLeanInfoViewJcef.
+        val virtualFile = e.dataContext.getData(CommonDataKeys.EDITOR)?.virtualFile
+        e.presentation.isVisible = virtualFile != null && LeanUtil.isLeanFile(virtualFile)
     }
 }
