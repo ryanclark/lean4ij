@@ -95,16 +95,9 @@ class LeanWorkspaceSymbolData(name: String,
          * @return
          */
         private fun getLocationString(project: Project, file: VirtualFile): String? {
-            return Optional.ofNullable<VirtualFile>(project.guessProjectDir())
-                .map<String?> { projectDir: VirtualFile ->
-                    VfsUtilCore.getRelativePath(
-                        file,
-                        projectDir,
-                        File.separatorChar
-                    )
-                }
-                .map { path: String? -> "($path)" }
-                .orElse(null)
+            val projectDir = project.guessProjectDir() ?: return null
+            val path = VfsUtilCore.getRelativePath(file, projectDir, File.separatorChar) ?: return null
+            return "($path)"
         }
     }
 }

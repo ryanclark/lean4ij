@@ -25,16 +25,13 @@ import com.intellij.openapi.options.SettingsEditor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.NotNullLazyValue
 import com.intellij.ui.dsl.builder.Cell
-import com.intellij.ui.EditorTextField
 import com.intellij.ui.RawCommandLineEditor
 import com.intellij.ui.dsl.builder.Align
 import com.intellij.ui.dsl.builder.Row
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.ui.dsl.builder.toMutableProperty
-import com.intellij.util.ui.FormBuilder
 import lean4ij.project.ElanService
 import javax.swing.JComponent
-import javax.swing.JPanel
 
 fun <T : JComponent> Row.fullWidthCell(component: T): Cell<T> {
     return cell(component).align(Align.FILL)

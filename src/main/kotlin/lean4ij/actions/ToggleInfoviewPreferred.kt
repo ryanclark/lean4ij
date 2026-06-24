@@ -6,28 +6,23 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.components.service
-import lean4ij.infoview.LeanInfoviewService
 import lean4ij.project.LeanProjectService
 import lean4ij.setting.Lean4Settings
 import lean4ij.util.LeanUtil
 
 class ToggleInfoviewPreferred : AnAction() {
-    private val lean4Settings = service<Lean4Settings>()
-    // TODO constant for the actions
-    private val toggleLeanInfoViewInternal = ActionManager.getInstance().getAction("ToggleLeanInfoViewInternal")
-    private val toggleLeanInfoViewJcef = ActionManager.getInstance().getAction("ToggleLeanInfoViewJcef")
 
     override fun getActionUpdateThread(): ActionUpdateThread {
-        return ActionUpdateThread.BGT;
+        return ActionUpdateThread.BGT
     }
 
     override fun actionPerformed(e: AnActionEvent) {
-        when {
-            lean4Settings.preferredInfoview == "Jcef" ->
-                    toggleLeanInfoViewJcef.actionPerformed(e)
-            else ->
-                    toggleLeanInfoViewInternal.actionPerformed(e)
-        }
+        // Resolve the service and delegate action lazily: this action is added to app-level toolbars and is
+        // constructed eagerly at startup, where resolving other actions in the constructor is an ordering
+        // hazard and forces the settings service to initialize.
+        val preferred = service<Lean4Settings>().preferredInfoview
+        val actionId = if (preferred == "Jcef") "ToggleLeanInfoViewJcef" else "ToggleLeanInfoViewInternal"
+        ActionManager.getInstance().getAction(actionId)?.actionPerformed(e)
     }
 
     /**

@@ -67,7 +67,6 @@ import org.eclipse.lsp4j.PublishDiagnosticsParams
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
-import java.nio.charset.StandardCharsets
 import kotlin.math.max
 import kotlin.math.min
 
@@ -524,8 +523,10 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
                 val didCloseParams = DidCloseTextDocumentParams(TextDocumentIdentifier(file))
                 languageServer.didClose(didCloseParams)
                 val textDocumentItem = TextDocumentItem(
+                    // Re-open the server with the live document text, not the on-disk bytes: if the editor has
+                    // unsaved edits, contentsToByteArray() would desync the server from what the user sees.
                     file, Constants.LEAN_LANGUAGE_ID, 0,
-                    String(editor.virtualFile.contentsToByteArray(), StandardCharsets.UTF_8)
+                    editor.document.text
                 )
                 val didOpenTextDocumentParams = DidOpenTextDocumentParams(textDocumentItem)
                 languageServer.didOpen(didOpenTextDocumentParams)

@@ -150,7 +150,7 @@ class LeanRunSettingsEditor : SettingsEditor<LeanRunConfiguration>() {
             row("&Arguments") {
                 fullWidthCell(argumentsField)
                     .resizableColumn()
-                    .comment("Arguments for elan")
+                    .comment("Arguments for lean")
                     // TODO the binding seems unnecessary
                     .bind (
                         componentGet = {it.text},
@@ -162,7 +162,7 @@ class LeanRunSettingsEditor : SettingsEditor<LeanRunConfiguration>() {
             }
             row("&Environment Variables") {
                 fullWidthCell(environmentField)
-                    .comment("Environment variables for running elan")
+                    .comment("Environment variables for running lean")
                     .bind(
                         componentGet = {it.envs},
                         componentSet = {component, value -> component.envs = value},

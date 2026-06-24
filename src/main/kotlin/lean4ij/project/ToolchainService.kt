@@ -70,8 +70,6 @@ class ElanService {
                 }
                 else -> throw Exception("HTTP Error ${connection.responseCode}: ${connection.responseMessage}")
             }
-        } catch (e: Exception) {
-            throw e;
         } finally {
             connection.disconnect()
         }

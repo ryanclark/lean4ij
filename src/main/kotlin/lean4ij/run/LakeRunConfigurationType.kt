@@ -133,7 +133,7 @@ class LakeRunSettingsEditor : SettingsEditor<LakeRunConfiguration>() {
             row("&Arguments") {
                 fullWidthCell(argumentsField)
                     .resizableColumn()
-                    .comment("Arguments for elan")
+                    .comment("Arguments for lake")
                     // TODO the binding seems unnecessary
                     .bind (
                         componentGet = {it.text},
@@ -145,7 +145,7 @@ class LakeRunSettingsEditor : SettingsEditor<LakeRunConfiguration>() {
             }
             row("&Environment Variables") {
                 fullWidthCell(environmentField)
-                    .comment("Environment variables for running elan")
+                    .comment("Environment variables for running lake")
                     .bind(
                         componentGet = {it.envs},
                         componentSet = {component, value -> component.envs = value},
