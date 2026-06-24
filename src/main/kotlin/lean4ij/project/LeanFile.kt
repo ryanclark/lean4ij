@@ -2,24 +2,15 @@ package lean4ij.project
 
 import com.google.gson.JsonElement
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.EDT
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.LogicalPosition
-import com.intellij.openapi.editor.colors.TextAttributesKey
 import com.intellij.openapi.editor.markup.DefaultLineMarkerRenderer
-import com.intellij.openapi.editor.markup.HighlighterLayer
-import com.intellij.openapi.editor.markup.HighlighterTargetArea
 import com.intellij.openapi.editor.markup.LineMarkerRendererEx
-import com.intellij.openapi.editor.markup.RangeHighlighter
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.platform.ide.progress.withBackgroundProgress
-import com.intellij.platform.util.progress.ProgressReporter
-import com.intellij.platform.util.progress.reportProgress
-import com.intellij.platform.util.progress.withProgressText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
@@ -30,9 +21,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.withContext
 import lean4ij.setting.Lean4Settings
 import lean4ij.infoview.InfoViewWindowFactory
 import lean4ij.infoview.MiniInfoviewService
@@ -59,7 +48,6 @@ import lean4ij.lsp.data.TaggedText
 import lean4ij.lsp.data.DefinitionTarget
 import lean4ij.util.Constants
 import lean4ij.util.LspUtil
-import lean4ij.util.step
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
@@ -68,7 +56,6 @@ import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import kotlin.math.max
-import kotlin.math.min
 
 
 /**
@@ -124,14 +111,6 @@ internal fun classifyRpcRetry(code: Int, message: String?): RpcRetryDecision {
 
 class LeanFile(private val leanProjectService: LeanProjectService, private val file: String) {
 
-    companion object {
-        // If no $/lean/fileProgress update arrives within this window while a file is "processing", treat it as
-        // finished so the background progress task can't hang on a missed/never-sent completion. This only needs
-        // to outlast the gap between progress events, not the whole elaboration, but a large proof or a fresh
-        // Mathlib import can sit on one file for minutes, so keep it generous to avoid a premature "finished".
-        private const val PROGRESS_WATCHDOG_MILLIS = 300_000L
-    }
-
     private val lean4Settings = service<Lean4Settings>()
 
     /**
@@ -141,141 +120,15 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
 
     var virtualFile : VirtualFile? = null
 
-    // UNLIMITED + ordered trySend (see updateFileProcessingInfo): the server's fileProgress events MUST be
-    // delivered in the order they arrive, or a `finished` (empty) event can overtake its preceding `processing`
-    // one and the progress loop blocks forever.
-    private val processingInfoChannel = Channel<FileProgressProcessingInfo>(Channel.UNLIMITED)
     private val project = leanProjectService.project
     private val buildWindowService: BuildWindowService = project.service()
     private val scope = leanProjectService.scope
 
+    /** The file-progress bar + gutter markers, extracted out of this otherwise-god object. */
+    private val progressRenderer = LeanFileProgressRenderer(project, scope, buildWindowService, leanProjectService, file, unquotedFile)
+
     /** The single keep-alive loop's job (see [keepAlive]); a new session cancels the previous loop. */
     private var keepAliveJob: Job? = null
-
-    init {
-        scope.launch {
-            // TODO is it here also blocking a thread?
-            // TODO add a setting for this
-            while (true) {
-                var info = processingInfoChannel.receive()
-                var highlighters = mutableListOf<RangeHighlighter>()
-                try {
-                    highlighters = tryAddLineMarker(info, highlighters)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    // Defensive: this call is outside the loop's main try/catch, so any marker failure
-                    // (bad offsets from a stale progress range, etc.) would otherwise leak as an unhandled
-                    // coroutine exception (SEVERE popup).
-                    thisLogger().debug("file progress line marker failed for $file: ${e.message}")
-                }
-                if (info.isFinished()) {
-                    continue
-                }
-                buildWindowService.startBuild(file)
-                try {
-                    withBackgroundFileProgress { reporter ->
-                        var currentStep = 0
-                        do {
-                            val newStep = info.workSize()
-                            // TODO they are chance that it's negative for file progress again
-                            //      this is because that, while progressing, editing it again in earlier position will
-                            //      trigger file processing again
-                            if (newStep >= currentStep) {
-                                reporter.step(newStep - currentStep)
-                                currentStep = newStep
-                            }
-                            // Watchdog: if the server sends no fileProgress update for a while, it likely will
-                            // never send the "finished" (empty) one (server hung on this file / missed
-                            // notification / restart). Treat that as finished so this background task and its
-                            // gutter markers can't stay stuck forever. A later update just starts a fresh cycle.
-                            info = withTimeoutOrNull(PROGRESS_WATCHDOG_MILLIS) { processingInfoChannel.receive() }
-                                ?: FileProgressProcessingInfo(info.textDocument, emptyList())
-                            highlighters = tryAddLineMarker(info, highlighters)
-                        } while (info.isProcessing())
-                    }
-                } catch (e: CancellationException) {
-
-                } catch (e: Exception) {
-                    // TODO here should only handle for task cancelling
-                    e.printStackTrace()
-                }
-                buildWindowService.endBuild(file)
-            }
-        }
-        // it seems facing some initialization order problem
-        // scope.launch {
-        //     getAllMessages()
-        // }
-    }
-
-    /**
-     * this is for avoiding flashing, a highlighter is always added in the first line
-     */
-    private var firstLineHighlighter :RangeHighlighter? = null
-    private val leanFileProgressEmptyTextAttributesKey = TextAttributesKey.createTextAttributesKey("LEAN_FILE_PROGRESS_EMPTY")
-
-    /**
-     */
-    private suspend fun tryAddLineMarker(info: FileProgressProcessingInfo, highlighters: MutableList<RangeHighlighter>): MutableList<RangeHighlighter> {
-        if (!lean4Settings.enableFileProgressBar) return mutableListOf()
-        // selectedTextEditor and the MarkupModel add/remove calls below are EDT-confined and fire UI events,
-        // but this runs from the background file-progress loop. Do the editor lookup and all markup mutation
-        // on the EDT (matching LeanProjectService.highlightCurrentContent), guarding a disposed project.
-        return withContext(Dispatchers.EDT) {
-            val ret = mutableListOf<RangeHighlighter>()
-            if (project.isDisposed) return@withContext ret
-            val editor = FileEditorManager.getInstance(project).selectedTextEditor ?: return@withContext ret
-            if (editor.virtualFile?.path != unquotedFile) return@withContext ret
-            val document = editor.document
-            val markupModel = editor.markupModel
-            if (firstLineHighlighter == null) {
-                firstLineHighlighter = markupModel.addLineHighlighter(0, 1, null)
-            }
-            firstLineHighlighter!!.lineMarkerRenderer = LeanFileProgressFinishedFillingLineMarkerRenderer
-            for (highlighter in highlighters) {
-                markupModel.removeHighlighter(highlighter)
-            }
-            for (processingInfo in info.processing) {
-                val startLine = processingInfo.range.start.line.let {
-                    if (it == 0) {
-                        firstLineHighlighter!!.lineMarkerRenderer = LeanFileProgressFillingLineMarkerRenderer
-                        1
-                    } else {
-                        it
-                    }
-                }
-                val endLine = min(processingInfo.range.end.line, document.lineCount)
-                val startLineOffset = StringUtil.lineColToOffset(document.charsSequence, startLine, 0)
-                val endLineOffset = StringUtil.lineColToOffset(document.charsSequence, min(endLine, document.lineCount-1), 0)
-                // TODO Here it may incur an exception:
-                //      https://github.com/onriv/lean4ij/issues/148
-                //      In a large chance it may be caused by the file is edited currently
-                //      For a temporary solution, just ignore it
-                if (endLineOffset == -1 || startLineOffset == -1 || startLineOffset > endLineOffset) {
-                    // start > end happens when the server's (stale) progress range inverts after an edit
-                    // (e.g. start=41, end=0); addRangeHighlighter would throw "Incorrect offsets". Skip it.
-                    continue
-                }
-                val rangeHighlighter = markupModel.addRangeHighlighter(
-                    leanFileProgressEmptyTextAttributesKey,
-                    startLineOffset, endLineOffset, HighlighterLayer.LAST, HighlighterTargetArea.LINES_IN_RANGE)
-                rangeHighlighter.lineMarkerRenderer = LeanFileProgressFillingLineMarkerRenderer
-                ret.add(rangeHighlighter)
-            }
-            ret
-        }
-    }
-
-    private suspend fun withBackgroundFileProgress(action: suspend (reporter: ProgressReporter) -> Unit) {
-        withBackgroundProgress(project, Constants.FILE_PROGRESS) {
-            withProgressText(leanProjectService.getRelativePath(file)) {
-                reportProgress { reporter ->
-                    action(reporter)
-                }
-            }
-        }
-    }
 
     /**
      * current file update caret
@@ -360,28 +213,10 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
         }
     }
 
-    fun updateFileProcessingInfo(info: FileProgressProcessingInfo) {
-        // Enqueue IN ORDER. lsp4ij invokes this notification handler sequentially, so a non-suspending trySend
-        // onto the UNLIMITED channel preserves the server's event order. The previous `scope.launch { send }`
-        // spawned a coroutine per notification that raced on the dispatcher: on the (then unbuffered) channel a
-        // `finished` event could be delivered BEFORE the preceding `processing`, so the loop consumed `finished`
-        // early and then blocked forever waiting for one that never came again: the stuck progress bar.
-        processingInfoChannel.trySend(info)
-    }
+    fun updateFileProcessingInfo(info: FileProgressProcessingInfo) = progressRenderer.updateFileProcessingInfo(info)
 
-    /**
-     * Clears an in-flight file-progress bar by feeding a synthetic "finished" notification.
-     *
-     * The Lean server signals that a file is done elaborating with a `$/lean/fileProgress`
-     * notification whose `processing` list is empty (see [FileProgressProcessingInfo.isFinished]).
-     * The background-progress coroutine in [init] blocks on [processingInfoChannel] waiting for
-     * that terminating event; if the server dies mid-elaboration it never arrives and the progress
-     * bar stays up forever. Calling this on server stop (see [LeanProjectService.resetServer])
-     * unblocks the coroutine so the bar is removed.
-     */
-    fun clearFileProgress() {
-        updateFileProcessingInfo(FileProgressProcessingInfo(TextDocumentIdentifier(file), emptyList()))
-    }
+    /** See [LeanFileProgressRenderer.clearFileProgress]; called on server stop (LeanProjectService.resetServer). */
+    fun clearFileProgress() = progressRenderer.clearFileProgress()
 
     private var session : String? = null
     private val sessionMutex : Mutex = Mutex()
