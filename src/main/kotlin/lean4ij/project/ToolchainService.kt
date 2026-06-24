@@ -14,7 +14,12 @@ import java.nio.file.Path
 
 data class GitHubTag(val name: String)
 
-@Service(Service.Level.PROJECT)
+// Application-level: ElanService holds no project state (its paths derive from user.home, and commandForRunningElan
+// takes the project as a parameter). It was previously PROJECT-level but looked up via the application-level
+// service<ElanService>() from the new-project wizard (which has no project yet); APP-level makes every call site
+// resolve consistently. project.service<ElanService>() still works for app-level services (it delegates to the
+// application container), so the run-config call site is unaffected.
+@Service(Service.Level.APP)
 class ElanService {
 
     val elanHomePath = Path.of(System.getProperty("user.home"), ".elan")

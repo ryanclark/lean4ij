@@ -18,8 +18,6 @@ import com.intellij.ide.util.projectWizard.WizardContext
 import com.intellij.ide.wizard.GeneratorNewProjectWizard
 import com.intellij.ide.wizard.GeneratorNewProjectWizardBuilderAdapter
 import com.intellij.ide.wizard.NewProjectWizardStep
-import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.components.service
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.execution.configurations.ConfigurationTypeUtil;
@@ -31,9 +29,6 @@ import com.intellij.openapi.ui.BrowseFolderDescriptor.Companion.withPathToTextCo
 import com.intellij.openapi.ui.BrowseFolderDescriptor.Companion.withTextToPathConvertor
 import com.intellij.openapi.module.GeneralModuleType
 import com.intellij.openapi.module.ModuleTypeManager
-// there exists same name of bind method in Cell in 2024.2, we rename it to force the extension method
-import com.intellij.openapi.observable.util.bind as observable_bind
-import com.intellij.openapi.observable.util.toStringProperty
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.TextBrowseFolderListener
 import com.intellij.openapi.ui.TextFieldWithBrowseButton
@@ -42,12 +37,9 @@ import com.intellij.openapi.ui.getPresentablePath
 import com.intellij.openapi.util.Key
 import com.intellij.openapi.util.UserDataHolder
 import com.intellij.openapi.util.UserDataHolderBase
-import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.ui.dsl.builder.AlignX
-import com.intellij.ui.dsl.builder.AlignY
 import com.intellij.ui.dsl.builder.Cell
-import com.intellij.ui.dsl.builder.CollapsibleRow
 import com.intellij.ui.dsl.builder.Panel
 import com.intellij.ui.dsl.builder.Row
 import com.intellij.ui.dsl.builder.bindItem
@@ -63,13 +55,10 @@ import lean4ij.run.fullWidthCell
 import lean4ij.sdk.SdkService
 import lean4ij.util.execute
 import java.awt.Color
-import java.awt.TextField
 import java.io.File
-import java.net.Proxy
 import java.nio.file.Path
 import javax.swing.Icon
 import javax.swing.JComponent
-import kotlin.concurrent.timerTask
 
 fun <T : JComponent> Panel.aligned(text: String, component: T, init: Cell<T>.() -> Unit = {}) = row(text) {
     cell(component).align(AlignX.FILL).init()

@@ -40,7 +40,7 @@ class ElanRunConfiguration(project: Project, factory: ConfigurationFactory, name
     override fun getConfigurationEditor(): SettingsEditor<out RunConfiguration> = ElanRunSettingsEditor()
 
     override fun buildCommandLine(): GeneralCommandLine =
-        project.service<ElanService>().commandForRunningElan(options.arguments, project, options.environments)
+        service<ElanService>().commandForRunningElan(options.arguments, project, options.environments)
 }
 
 class ElanRunSettingsEditor : ArgsEnvRunSettingsEditor<ElanRunConfiguration>("elan")

@@ -122,8 +122,21 @@ class Lean4Commenter : Commenter, CodeDocumentationAwareCommenter, SelfManagingC
                 if (!data.commentEmptyLine()) return
                 offset
             }
-            else ->
-                offset+text.indexOfFirst { it != ' ' }
+            else -> {
+                // The platform calls commentLine for every line in a multi-line selection, including
+                // whitespace-only ones. indexOfFirst returns -1 when the line is all whitespace; a -1 here
+                // would make newOffset = offset-1 and insert "--" onto the end of the PREVIOUS line (silent
+                // corruption), or throw IndexOutOfBoundsException at offset 0. So treat an all-whitespace line
+                // like an empty one. Skip leading tabs as well as spaces, so a tab-indented line comments
+                // after its indent like the space case.
+                val firstNonWhitespace = text.indexOfFirst { it != ' ' && it != '\t' }
+                if (firstNonWhitespace == -1) {
+                    if (!data.commentEmptyLine()) return
+                    offset
+                } else {
+                    offset + firstNonWhitespace
+                }
+            }
         }
         document.insertString(newOffset, "--" + if (addSpace) " " else "")
     }

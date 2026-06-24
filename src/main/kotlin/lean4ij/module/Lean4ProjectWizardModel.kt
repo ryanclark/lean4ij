@@ -84,7 +84,7 @@ class QuickStarterModel(private val propertyGraph: PropertyGraph, private val wi
     // Initialized with the local (non-network) versions. The GitHub fetch runs off the EDT in the afterChange
     // listener in init below and is pushed back here, instead of running a blocking HTTPS request inside a
     // synchronous property transform on the EDT, which froze the wizard for up to ~10s when the checkbox toggled.
-    val allVersionsProperty: GraphProperty<List<String>> = propertyGraph.property(getVersions(false))
+    val allVersionsProperty: GraphProperty<List<String>> = propertyGraph.property(getVersions(false).versions)
     val versionProperty = propertyGraph.lazyProperty {
         // firstOrNull, not [0]: getVersions can return an empty list (empty toolchains.txt / empty GitHub
         // response), which would otherwise crash the wizard UI with IndexOutOfBoundsException.
@@ -96,15 +96,26 @@ class QuickStarterModel(private val propertyGraph: PropertyGraph, private val wi
     val templatesProperty = propertyGraph.property(TEMPLATES.first())
     val languagesProperty = propertyGraph.property(LANGUAGES.first())
 
+    // Monotonic id so a slow fetch (e.g. GitHub) that finishes after a newer toggle does not overwrite the
+    // newer result with a stale version list. Read/written only on the EDT (afterChange and invokeLater).
+    private var versionFetchGeneration = 0
+
     init {
         // When the "fetch tags from GitHub" toggle changes, fetch off the EDT and publish the result back on
         // the EDT (any modality, so it applies while the wizard dialog is open) so the version combobox, which
         // observes allVersionsProperty, refreshes without freezing the wizard on the blocking HTTPS request.
         fetchingTagsFromGithubProperty.afterChange { fromGithub ->
+            val generation = ++versionFetchGeneration
             ApplicationManager.getApplication().executeOnPooledThread {
-                val versions = getVersions(fromGithub)
+                val result = getVersions(fromGithub)
                 ApplicationManager.getApplication().invokeLater({
-                    allVersionsProperty.set(versions)
+                    // Drop a stale out-of-order result, and publish BOTH versions and error text on the EDT.
+                    // getVersions runs on the pooled thread, so it must not set the Swing-bound properties itself
+                    // (the fetchingTagsError listener mutates JLabel state off the EDT otherwise); it returns them.
+                    if (generation == versionFetchGeneration) {
+                        allVersionsProperty.set(result.versions)
+                        fetchingTagsError.set(result.error)
+                    }
                 }, ModalityState.any())
             }
         }
@@ -123,31 +134,34 @@ class QuickStarterModel(private val propertyGraph: PropertyGraph, private val wi
         return wizardContext.projectFileDirectory
     }
 
-    private fun getVersions(fromGithub : Boolean): List<String> {
+    /** The version list plus the error text to display; returned (not set) so the off-EDT fetch mutates no
+     *  Swing-bound property. The caller publishes both on the EDT. */
+    private class VersionFetchResult(val versions: List<String>, val error: String)
+
+    private fun getVersions(fromGithub : Boolean): VersionFetchResult {
         val elanService = service<ElanService>()
         if (!fromGithub) {
-            return elanService.toolchains(includeRemote = true)
+            return VersionFetchResult(elanService.toolchains(includeRemote = true), "")
         }
 
-        try {
+        return try {
             val proxy = if (useProxyProperty.get()) {
                 proxyFromUrl(proxyValueProperty.get())
             } else {
                 null
             }
-            try {
-                return elanService.toolchainsFromGithub(proxy)
-            } finally {
-                fetchingTagsError.set("")
-            }
+            VersionFetchResult(elanService.toolchainsFromGithub(proxy), "")
         } catch (e: ConnectException) {
-            fetchingTagsError.set(
+            VersionFetchResult(
+                elanService.toolchains(includeRemote = true),
                 (e.message ?: "unknown error") + ", please consider using proxy<br>fallback to preset versions"
             )
         } catch (e: Exception) {
-            fetchingTagsError.set((e.message ?: "unknown error") + "<br>fallback to preset versions")
+            VersionFetchResult(
+                elanService.toolchains(includeRemote = true),
+                (e.message ?: "unknown error") + "<br>fallback to preset versions"
+            )
         }
-        return elanService.toolchains(includeRemote = true)
     }
 
     fun getLocationComment(): String {
