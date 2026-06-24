@@ -25,6 +25,8 @@ import com.intellij.openapi.editor.markup.UnmodifiableTextAttributes
 import com.intellij.openapi.fileEditor.TextEditor
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Key
+import com.intellij.openapi.util.UserDataHolderEx
 import com.intellij.openapi.rd.createLifetime
 import com.intellij.openapi.rd.createNestedDisposable
 import com.intellij.openapi.util.text.StringUtil
@@ -52,8 +54,11 @@ import java.util.Collections.synchronizedMap
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 
-// location is either line or absolute pos, depending on the type of hint
-class Hint(val position: RangeMarker, val content: String, val collapseSize: Int, val collapsedText: String)
+// offset is a plain document offset, not a RangeMarker. A hint only needs to survive the single pass
+// between background computation and rendering, and the cache is keyed by modificationStamp, so there is no
+// edit to track. Storing RangeMarkers here leaked them: the document's RangeMarkerTree retains every marker
+// until it is disposed, and these never were, so editing degraded as markers accumulated over a session.
+class Hint(val offset: Int, val content: String, val collapseSize: Int, val collapsedText: String)
 
 class HintSet {
     companion object {
@@ -93,7 +98,7 @@ class HintSet {
 
     fun dumpHints(sink: InlayTreeSink) {
         this.hints.forEach { hint ->
-            sink.addPresentation(InlineInlayPosition(hint.position.startOffset, false), hasBackground = true) {
+            sink.addPresentation(InlineInlayPosition(hint.offset, false), hasBackground = true) {
                 this.addHint(hint)
             }
         }
@@ -132,6 +137,15 @@ class HintCache {
 
     fun insertDirty(file: LeanFile, hints: HintSet) {
         dirtyCache[file] = hints
+    }
+
+    /**
+     * Drop the in-flight slot for [file] at [time] so the next pass recomputes instead of serving a cached
+     * (possibly empty) result for this document version. Only removes if the slot still holds [time], to
+     * avoid clobbering a newer in-flight computation.
+     */
+    fun evict(file: LeanFile, time: Long) {
+        ongoingCache.computeIfPresent(file) { _, cur -> if (cur.first == time) null else cur }
     }
 }
 
@@ -179,10 +193,12 @@ abstract class InlayHintBase(protected val editor: Editor, protected val project
         else {
             // recompute
             hints = CompletableFuture<HintSet>()
-            hintCache.insert(leanFile, element.containingFile.modificationStamp, hints)
+            hintCache.insert(leanFile, time, hints)
             leanProject.scope.launch {
                 try {
-                    val content = editor.document.text
+                    // document.text must be read under a read lock; reading it off this background coroutine
+                    // without one races concurrent document mutations.
+                    val content = ReadAction.compute<String, Throwable> { editor.document.text }
                     val actualHints = computeFor(leanFile, content)
                     hints.complete(actualHints)
 
@@ -193,10 +209,11 @@ abstract class InlayHintBase(protected val editor: Editor, protected val project
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
-                    // The Lean server restarts often (transient closed-file/RPC errors); don't let this leak as
-                    // an unhandled coroutine exception. Complete the future with empty hints so collectFromElement
-                    // doesn't block. The empty HintSet is cached under the current modificationStamp, so the same
-                    // stamp keeps returning it; hints only recover on the next edit (a stamp change), not the next pass.
+                    // The Lean server restarts often (transient closed-file/RPC errors). Drop this version's
+                    // cache slot so the next pass retries rather than permanently serving empty hints for the
+                    // current document version, and complete the future so anything already holding it unblocks.
+                    // The last-good (dirty) hints stay on screen meanwhile.
+                    hintCache.evict(leanFile, time)
                     hints.complete(HintSet())
                     thisLogger().debug("Skip inlay hints for ${leanFile.virtualFile?.path} (language server unavailable/restarting): ${e.message}")
                 }
@@ -288,10 +305,7 @@ class OmitTypeInlayHintsCollector(editor: Editor, project: Project?) : InlayHint
                 hintPos += 1
             }
 
-            val range = ReadAction.compute<RangeMarker, Throwable> {
-                editor.document.createRangeMarker(hintPos, hintPos)
-            }
-            hints.add(Hint(range, inlayHintType, 35, ": ..."))
+            hints.add(Hint(hintPos, inlayHintType, 35, ": ..."))
         }
 
         return hints
@@ -322,18 +336,27 @@ class OmitTypeInlayHintsCollector(editor: Editor, project: Project?) : InlayHint
     }
 }
 
+/**
+ * Get-or-create a collector stored in the editor's user data. The collector caches a per-file [HintCache],
+ * which must survive across passes, but keying that off a static path-indexed map (the previous approach)
+ * never evicted and leaked the Editor + HintCache for the application's lifetime. User data is released when
+ * the editor is disposed, so this ties the cache to the editor's lifecycle. createCollector may run off the
+ * EDT, so use the atomic putUserDataIfAbsent where the editor supports it.
+ */
+private fun <T : InlayHintBase> editorCollector(editor: Editor, key: Key<T>, create: () -> T): T {
+    (editor as? UserDataHolderEx)?.let { return it.putUserDataIfAbsent(key, create()) }
+    return editor.getUserData(key) ?: create().also { editor.putUserData(key, it) }
+}
+
 class OmitTypeInlayHintsProvider : InlayHintsProvider {
 
     companion object {
-        val providers = ConcurrentHashMap<String, OmitTypeInlayHintsCollector>()
+        private val COLLECTOR_KEY = Key.create<OmitTypeInlayHintsCollector>("lean4ij.omitTypeInlayCollector")
     }
 
     override fun createCollector(file: PsiFile, editor: Editor): InlayHintsCollector? {
-        // TODO why here nullable?
-        if (file.virtualFile==null) return null
-        return providers.computeIfAbsent(file.virtualFile.path) {
-            OmitTypeInlayHintsCollector(editor, editor.project)
-        }
+        if (file.virtualFile == null) return null
+        return editorCollector(editor, COLLECTOR_KEY) { OmitTypeInlayHintsCollector(editor, editor.project) }
     }
 }
 
@@ -376,11 +399,8 @@ class GoalInlayHintsCollector(editor: Editor, project: Project?) : InlayHintBase
                 typeHint = termGoal?.type?.toInfoObjectModel()?.toString() ?: continue
             }
 
-            var hintPos = m.range.first + m.groupValues[1].length
-            val range = ReadAction.compute<RangeMarker, Throwable> {
-                editor.document.createRangeMarker(hintPos, hintPos)
-            }
-            hints.add(Hint(range, typeHint, 100, "..."))
+            val hintPos = m.range.first + m.groupValues[1].length
+            hints.add(Hint(hintPos, typeHint, 100, "..."))
         }
 
         return hints
@@ -394,17 +414,14 @@ class GoalInlayHintsCollector(editor: Editor, project: Project?) : InlayHintBase
 class GoalInlayHintsProvider : InlayHintsProvider {
 
     companion object {
-        val providers = ConcurrentHashMap<String, GoalInlayHintsCollector>()
+        private val COLLECTOR_KEY = Key.create<GoalInlayHintsCollector>("lean4ij.goalInlayCollector")
     }
 
     override fun createCollector(file: PsiFile, editor: Editor): InlayHintsCollector? {
-        // TODO weird here it can be null
         if (file.virtualFile == null) {
             return null
         }
-        return providers.computeIfAbsent(file.virtualFile.path) {
-            GoalInlayHintsCollector(editor, editor.project)
-        }
+        return editorCollector(editor, COLLECTOR_KEY) { GoalInlayHintsCollector(editor, editor.project) }
     }
 }
 
@@ -441,10 +458,7 @@ class PlaceHolderInlayHintsCollector(editor: Editor, project: Project?) : InlayH
                     }
                     val inlayHint = split[1]
                     val hintPos = m.range.last + 1
-                    val range = ReadAction.compute<RangeMarker, Throwable> {
-                        editor.document.createRangeMarker(hintPos, hintPos)
-                    }
-                    hints.add(Hint(range, inlayHint, 20, "..."))
+                    hints.add(Hint(hintPos, inlayHint, 20, "..."))
                 }
             }
         }
@@ -459,15 +473,12 @@ class PlaceHolderInlayHintsCollector(editor: Editor, project: Project?) : InlayH
 
 class PlaceHolderInlayHintsProvider : InlayHintsProvider {
     companion object {
-        val providers = ConcurrentHashMap<String, PlaceHolderInlayHintsCollector>()
+        private val COLLECTOR_KEY = Key.create<PlaceHolderInlayHintsCollector>("lean4ij.placeholderInlayCollector")
     }
 
-
     override fun createCollector(file: PsiFile, editor: Editor): InlayHintsCollector? {
-        val virtualFile = file.virtualFile ?: return null
-        return providers.computeIfAbsent(virtualFile.path) {
-            PlaceHolderInlayHintsCollector(editor, editor.project)
-        }
+        if (file.virtualFile == null) return null
+        return editorCollector(editor, COLLECTOR_KEY) { PlaceHolderInlayHintsCollector(editor, editor.project) }
     }
 }
 
