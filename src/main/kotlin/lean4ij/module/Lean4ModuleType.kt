@@ -101,7 +101,9 @@ class QuickStarterModel(private val propertyGraph: PropertyGraph, private val wi
     // synchronous property transform on the EDT, which froze the wizard for up to ~10s when the checkbox toggled.
     val allVersionsProperty: GraphProperty<List<String>> = propertyGraph.property(getVersions(false))
     val versionProperty = propertyGraph.lazyProperty {
-        allVersionsProperty.get()[0]
+        // firstOrNull, not [0]: getVersions can return an empty list (empty toolchains.txt / empty GitHub
+        // response), which would otherwise crash the wizard UI with IndexOutOfBoundsException.
+        allVersionsProperty.get().firstOrNull() ?: ""
     }
     val useProxyProperty = propertyGraph.lazyProperty { false }
     val proxyValueProperty = propertyGraph.lazyProperty { "" }

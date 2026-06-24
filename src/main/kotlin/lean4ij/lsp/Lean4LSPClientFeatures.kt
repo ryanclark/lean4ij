@@ -123,7 +123,7 @@ class Lean4LSPClientFeatures(private val explicitPackageRoot: Path? = null) : LS
         if (!project.service<LakePackageService>().belongsTo(file, packageRoot)) {
             return false
         }
-        if (lean4Settings.fileProgressTriggeringStrategy == "AllOpenedEditor") {
+        if (lean4Settings.fileProgressTriggeringStrategy == Lean4Settings.FILE_PROGRESS_ALL_OPENED) {
             return true
         }
         val fileEditorManager = FileEditorManager.getInstance(project)

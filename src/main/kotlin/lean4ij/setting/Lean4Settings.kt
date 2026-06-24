@@ -17,6 +17,20 @@ import com.intellij.util.xmlb.XmlSerializerUtil
     storages = [Storage("Lean4.xml")]
 )
 class Lean4Settings : PersistentStateComponent<Lean4Settings> {
+
+    companion object {
+        // Persisted string values for the enum-like settings. Kept as constants (not a Kotlin enum) so the
+        // serialized form stays a plain string; reference these instead of duplicating the literals at the
+        // scattered comparison sites, where a typo would silently change behavior.
+        const val SERVER_START_EAGER = "Eager"
+        const val SERVER_START_LAZY = "Lazy"
+        const val FILE_PROGRESS_ONLY_SELECTED = "OnlySelectedEditor"
+        const val FILE_PROGRESS_ALL_OPENED = "AllOpenedEditor"
+        const val SYMBOL_REQUEST_DEBOUNCE = "debounce"
+        const val SYMBOL_REQUEST_SUFFIX = "suffix"
+        const val INFOVIEW_JCEF = "Jcef"
+        const val INFOVIEW_SWING = "Swing"
+    }
     var commentEmptyLine = true
     var commentAtFirstColumn = false
     var useSpaceAfterLineComment = true
@@ -37,12 +51,10 @@ class Lean4Settings : PersistentStateComponent<Lean4Settings> {
     var enableLanguageServer = true
     var enableLeanServerLog = false
     var enableFileProgressBar = true
-    // TODO use constant or enum for this
-    //      a reason currently it's not enum is for serialization/persistence
-    var languageServerStartingStrategy = "Eager"
-    var fileProgressTriggeringStrategy = "OnlySelectedEditor"
+    var languageServerStartingStrategy = SERVER_START_EAGER
+    var fileProgressTriggeringStrategy = FILE_PROGRESS_ONLY_SELECTED
 
-    var strategyForTriggeringSymbolsOrClassesRequests = "debounce"
+    var strategyForTriggeringSymbolsOrClassesRequests = SYMBOL_REQUEST_DEBOUNCE
     var workspaceSymbolTriggerSuffix = ",,"
     var workspaceSymbolTriggerDebouncingTime = 1000
 
@@ -52,8 +64,7 @@ class Lean4Settings : PersistentStateComponent<Lean4Settings> {
     var enableDiagnosticsLens = true
     var enableLspCompletion = true
 
-    // TODO use constant or enum for this
-    var preferredInfoview = "Jcef"
+    var preferredInfoview = INFOVIEW_JCEF
     var enableNativeInfoview = true
     var autoUpdateInternalInfoview = true
     var hoveringTimeBeforePopupNativeInfoviewDoc = 200
@@ -111,8 +122,8 @@ fun Lean4SettingsView.createComponent(settings: Lean4Settings) = panel {
         select(
             "Language server starting strategy",
             arrayOf(
-                "Eager",
-                "Lazy",
+                Lean4Settings.SERVER_START_EAGER,
+                Lean4Settings.SERVER_START_LAZY,
             ),
             settings::languageServerStartingStrategy,
             listOf(
@@ -122,8 +133,8 @@ fun Lean4SettingsView.createComponent(settings: Lean4Settings) = panel {
         )
         select("File processing triggering strategy",
             arrayOf(
-                "OnlySelectedEditor",
-                "AllOpenedEditor",
+                Lean4Settings.FILE_PROGRESS_ONLY_SELECTED,
+                Lean4Settings.FILE_PROGRESS_ALL_OPENED,
             ),
             settings::fileProgressTriggeringStrategy,
             listOf(
@@ -135,7 +146,7 @@ fun Lean4SettingsView.createComponent(settings: Lean4Settings) = panel {
             comment("<a href='https://github.com/leanperrover/lean4/tree/master/src/Lean/Server#in-general'>ref</a>")
         }
         val workspaceSymbolsOrClassesRequestsStrategy = select("Strategy for triggering workspace symbols/classes request",
-            arrayOf("debounce", "suffix"),
+            arrayOf(Lean4Settings.SYMBOL_REQUEST_DEBOUNCE, Lean4Settings.SYMBOL_REQUEST_SUFFIX),
             settings::strategyForTriggeringSymbolsOrClassesRequests,
             listOf(
                 "use debounce, request is triggering after idle for configured time",
@@ -143,17 +154,17 @@ fun Lean4SettingsView.createComponent(settings: Lean4Settings) = panel {
             )
         )
         string("Suffix string for triggering workspace symbol/class request", settings::workspaceSymbolTriggerSuffix)
-            .enabledIf(workspaceSymbolsOrClassesRequestsStrategy.isSelecting("suffix"))
+            .enabledIf(workspaceSymbolsOrClassesRequestsStrategy.isSelecting(Lean4Settings.SYMBOL_REQUEST_SUFFIX))
         int("Debouncing time for triggering workspace symbol/class request", settings::workspaceSymbolTriggerDebouncingTime, 200, 3000)
-            .enabledIf(workspaceSymbolsOrClassesRequestsStrategy.isSelecting("debounce"))
+            .enabledIf(workspaceSymbolsOrClassesRequestsStrategy.isSelecting(Lean4Settings.SYMBOL_REQUEST_DEBOUNCE))
         boolean("Enable lsp completion", settings::enableLspCompletion)
     }
     group("Infoview Settings") {
         select(
             "Select preferred infoview",
             arrayOf(
-                "Jcef",
-                "Swing",
+                Lean4Settings.INFOVIEW_JCEF,
+                Lean4Settings.INFOVIEW_SWING,
             ),
             settings::preferredInfoview,
             listOf("Prefer the Jcef/External/Vscode infoview", "Prefer the Swing/Native/Internal infoview")

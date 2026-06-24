@@ -251,7 +251,7 @@ class WorkspaceSymbolsCache(private val project: Project) {
     }
 
     fun getWorkspaceSymbols(queryString: String): List<LeanWorkspaceSymbolData> {
-        if (lean4Settings.strategyForTriggeringSymbolsOrClassesRequests == "suffix") {
+        if (lean4Settings.strategyForTriggeringSymbolsOrClassesRequests == Lean4Settings.SYMBOL_REQUEST_SUFFIX) {
             return getWorkspaceSymbolsTriggeredBySuffix(queryString)
         } else {
             return getWorkspaceSymbolsTriggeredByDebounce(queryString)

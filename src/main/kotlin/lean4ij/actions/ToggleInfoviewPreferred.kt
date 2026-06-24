@@ -21,7 +21,7 @@ class ToggleInfoviewPreferred : AnAction() {
         // constructed eagerly at startup, where resolving other actions in the constructor is an ordering
         // hazard and forces the settings service to initialize.
         val preferred = service<Lean4Settings>().preferredInfoview
-        val actionId = if (preferred == "Jcef") "ToggleLeanInfoViewJcef" else "ToggleLeanInfoViewInternal"
+        val actionId = if (preferred == Lean4Settings.INFOVIEW_JCEF) "ToggleLeanInfoViewJcef" else "ToggleLeanInfoViewInternal"
         ActionManager.getInstance().getAction(actionId)?.actionPerformed(e)
     }
 

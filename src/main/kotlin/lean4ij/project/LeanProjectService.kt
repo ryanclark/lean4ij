@@ -88,7 +88,7 @@ class LeanProjectService(val project: Project, val scope: CoroutineScope)  {
      * TODO it's back to true, inconsistent with readme
      * TODO this is not per project...
      */
-    val isEnable : AtomicBoolean = AtomicBoolean(lean4Settings.languageServerStartingStrategy == "Eager")
+    val isEnable : AtomicBoolean = AtomicBoolean(lean4Settings.languageServerStartingStrategy == Lean4Settings.SERVER_START_EAGER)
 
     /**
      * Guards one-time registration of the LSP lifecycle listener. [lean4ij.lsp.LeanLanguageServerProvider]
