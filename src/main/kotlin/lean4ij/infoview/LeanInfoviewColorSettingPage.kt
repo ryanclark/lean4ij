@@ -10,20 +10,13 @@ import com.intellij.openapi.fileTypes.SyntaxHighlighter
 import com.intellij.openapi.options.colors.AttributesDescriptor
 import com.intellij.openapi.options.colors.ColorDescriptor
 import com.intellij.openapi.options.colors.ColorSettingsPage
-import java.awt.Color
 import javax.swing.Icon
 
 enum class AttrSelect {
     FOREGROUND,
-    BACKGROUNND,
+    BACKGROUND,
     COLOR,
     ALL,
-}
-
-fun createTextAttributesKey(color: Color?, fallbackKey: TextAttributesKey?) {
-    if (color != null) {
-        val key = TextAttributesKey.createTextAttributesKey("todo")
-    }
 }
 
 enum class Lean4TextAttributesKeys(val style: String, private val fallbackKey: TextAttributesKey,
@@ -33,8 +26,8 @@ enum class Lean4TextAttributesKeys(val style: String, private val fallbackKey: T
     GoalHyp("goal-hyp", DefaultLanguageHighlighterColors.INSTANCE_FIELD, AttrSelect.FOREGROUND),
     GoalInaccessible("goal-inaccessible", DefaultLanguageHighlighterColors.LINE_COMMENT, AttrSelect.FOREGROUND),
     // The default color of the following two seems not bad
-    InsertedText("inserted-text", DiffColors.DIFF_INSERTED, AttrSelect.BACKGROUNND),
-    RemovedText("removed-text", DiffColors.DIFF_DELETED, AttrSelect.BACKGROUNND),
+    InsertedText("inserted-text", DiffColors.DIFF_INSERTED, AttrSelect.BACKGROUND),
+    RemovedText("removed-text", DiffColors.DIFF_DELETED, AttrSelect.BACKGROUND),
 
     SwingInfoviewCurrentPosition("swing-infoview-current-position", DefaultLanguageHighlighterColors.VALID_STRING_ESCAPE, AttrSelect.ALL),
     SwingInfoviewExpectedType("swing-infoview-expected-type", DefaultLanguageHighlighterColors.CLASS_NAME, AttrSelect.ALL),

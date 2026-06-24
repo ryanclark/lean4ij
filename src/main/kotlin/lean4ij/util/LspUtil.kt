@@ -17,7 +17,9 @@ object LspUtil {
      * (see this [issue](https://github.com/microsoft/vscode-languageserver-node/issues/1280)
      * and the related [pull request](https://github.com/microsoft/language-server-protocol/pull/1786)).
      *
-     * Some LSP servers support only the VS Code-friendly URI format (`file:///c%3A/foo`), so it's safer to use it by default.
+     * NOTE: this only ensures the `file://`/`file:///` prefix is present; it does NOT percent-escape the
+     * path (e.g. the Windows drive colon). If a server is ever found to require the escaped `file:///c%3A/...`
+     * form, that escaping must be added here.
      * check also [com.redhat.devtools.lsp4ij.LSPIJUtils.toTextDocumentIdentifier]
      */
     fun quote(url: String) : String {
