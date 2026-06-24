@@ -141,11 +141,8 @@ class WorkspaceSymbolsCacheLoader(private val project: Project) :
 
     override fun load(key: String): List<LeanWorkspaceSymbolData> {
         thisLogger().info("loading symbols for $key")
-
-        // TODO very fuzzy this way...
-        //      after lsp4ij 0.8.0 it can be removed
-        //      maybe the best way is make a pr to lean4 for not file progress in didOpen request...
-        project.service<LeanProjectService>().isEnable.set(true)
+        // Pure server-fetch: waking the server (isEnable.set(true)) is now done by the caller
+        // (WorkspaceSymbolsCache.getWorkspaceSymbols), so this loader has no side effect beyond the RPC.
         // TODO change the old way getting language server to this maybe!
         val languageServerItem = try {
             LanguageServerManager.getInstance(project)
@@ -274,6 +271,10 @@ class WorkspaceSymbolsCache(private val project: Project) {
     }
 
     fun getWorkspaceSymbols(queryString: String): List<LeanWorkspaceSymbolData> {
+        // Wake the (lazy) Lean server on any Goto-Symbol/Class query. Done here rather than inside the cache
+        // loader so the loader is a pure server-fetch; the set is an idempotent AtomicBoolean, so firing it on
+        // every query (not only on a cache miss) is harmless and preserves the server-wake contract.
+        project.service<LeanProjectService>().isEnable.set(true)
         if (lean4Settings.strategyForTriggeringSymbolsOrClassesRequests == Lean4Settings.SYMBOL_REQUEST_SUFFIX) {
             return getWorkspaceSymbolsTriggeredBySuffix(queryString)
         } else {
