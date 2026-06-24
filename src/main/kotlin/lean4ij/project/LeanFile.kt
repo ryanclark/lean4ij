@@ -2,6 +2,7 @@ package lean4ij.project
 
 import com.google.gson.JsonElement
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.EDT
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.editor.Editor
@@ -20,7 +21,6 @@ import com.intellij.platform.util.progress.ProgressReporter
 import com.intellij.platform.util.progress.reportProgress
 import com.intellij.platform.util.progress.withProgressText
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
@@ -31,6 +31,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
 import lean4ij.setting.Lean4Settings
 import lean4ij.infoview.InfoViewWindowFactory
 import lean4ij.infoview.MiniInfoviewService
@@ -96,7 +98,9 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
     private val project = leanProjectService.project
     private val buildWindowService: BuildWindowService = project.service()
     private val scope = leanProjectService.scope
-    private val scopeIO = CoroutineScope(Dispatchers.IO)
+
+    /** The single keep-alive loop's job (see [keepAlive]); a new session cancels the previous loop. */
+    private var keepAliveJob: Job? = null
 
     init {
         scope.launch {
@@ -163,50 +167,54 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
 
     /**
      */
-    private fun tryAddLineMarker(info: FileProgressProcessingInfo, highlighters: MutableList<RangeHighlighter>): MutableList<RangeHighlighter> {
-        val ret = mutableListOf<RangeHighlighter>()
-        if (!lean4Settings.enableFileProgressBar) return ret
-        FileEditorManager.getInstance(project).selectedTextEditor?.let { editor ->
-            if (editor.virtualFile.path == unquotedFile) {
-                val document = editor.document
-                val markupModel = editor.markupModel
-                if (firstLineHighlighter == null) {
-                    firstLineHighlighter = markupModel.addLineHighlighter(0, 1, null)
-                }
-                firstLineHighlighter!!.lineMarkerRenderer = leanFileProgressFinishedFillingLineMarkerRender
-                for (highlighter in highlighters) {
-                    markupModel.removeHighlighter(highlighter)
-                }
-                for (processingInfo in info.processing) {
-                    val startLine = processingInfo.range.start.line.let {
-                        if (it == 0) {
-                            firstLineHighlighter!!.lineMarkerRenderer = leanFileProgressFillingLineMarkerRender
-                            1
-                        } else {
-                            it
-                        }
-                    }
-                    val endLine = min(processingInfo.range.end.line, document.lineCount)
-                    val startLineOffset = StringUtil.lineColToOffset(document.charsSequence, startLine, 0)
-                    val endLineOffset = StringUtil.lineColToOffset(document.charsSequence, min(endLine, document.lineCount-1), 0)
-                    // TODO Here it may incur an exception:
-                    //      https://github.com/onriv/lean4ij/issues/148
-                    //      In a large chance it may be caused by the file is edited currently
-                    //      For a temporary solution, just ignore it
-                    if (endLineOffset == -1 || startLineOffset == -1 || startLineOffset > endLineOffset) {
-                        // start > end happens when the server's (stale) progress range inverts after an edit
-                        // (e.g. start=41, end=0); addRangeHighlighter would throw "Incorrect offsets". Skip it.
-                        continue
-                    }
-                    val rangeHighlighter = markupModel.addRangeHighlighter(
-                        leanFileProgressEmptyTextAttributesKey,
-                        startLineOffset, endLineOffset, HighlighterLayer.LAST, HighlighterTargetArea.LINES_IN_RANGE)
-                    rangeHighlighter.lineMarkerRenderer = leanFileProgressFillingLineMarkerRender
-                    ret.add(rangeHighlighter)
-                }
+    private suspend fun tryAddLineMarker(info: FileProgressProcessingInfo, highlighters: MutableList<RangeHighlighter>): MutableList<RangeHighlighter> {
+        if (!lean4Settings.enableFileProgressBar) return mutableListOf()
+        // selectedTextEditor and the MarkupModel add/remove calls below are EDT-confined and fire UI events,
+        // but this runs from the background file-progress loop. Do the editor lookup and all markup mutation
+        // on the EDT (matching LeanProjectService.highlightCurrentContent), guarding a disposed project.
+        return withContext(Dispatchers.EDT) {
+            val ret = mutableListOf<RangeHighlighter>()
+            if (project.isDisposed) return@withContext ret
+            val editor = FileEditorManager.getInstance(project).selectedTextEditor ?: return@withContext ret
+            if (editor.virtualFile?.path != unquotedFile) return@withContext ret
+            val document = editor.document
+            val markupModel = editor.markupModel
+            if (firstLineHighlighter == null) {
+                firstLineHighlighter = markupModel.addLineHighlighter(0, 1, null)
             }
+            firstLineHighlighter!!.lineMarkerRenderer = leanFileProgressFinishedFillingLineMarkerRender
+            for (highlighter in highlighters) {
+                markupModel.removeHighlighter(highlighter)
+            }
+            for (processingInfo in info.processing) {
+                val startLine = processingInfo.range.start.line.let {
+                    if (it == 0) {
+                        firstLineHighlighter!!.lineMarkerRenderer = leanFileProgressFillingLineMarkerRender
+                        1
+                    } else {
+                        it
+                    }
+                }
+                val endLine = min(processingInfo.range.end.line, document.lineCount)
+                val startLineOffset = StringUtil.lineColToOffset(document.charsSequence, startLine, 0)
+                val endLineOffset = StringUtil.lineColToOffset(document.charsSequence, min(endLine, document.lineCount-1), 0)
+                // TODO Here it may incur an exception:
+                //      https://github.com/onriv/lean4ij/issues/148
+                //      In a large chance it may be caused by the file is edited currently
+                //      For a temporary solution, just ignore it
+                if (endLineOffset == -1 || startLineOffset == -1 || startLineOffset > endLineOffset) {
+                    // start > end happens when the server's (stale) progress range inverts after an edit
+                    // (e.g. start=41, end=0); addRangeHighlighter would throw "Incorrect offsets". Skip it.
+                    continue
+                }
+                val rangeHighlighter = markupModel.addRangeHighlighter(
+                    leanFileProgressEmptyTextAttributesKey,
+                    startLineOffset, endLineOffset, HighlighterLayer.LAST, HighlighterTargetArea.LINES_IN_RANGE)
+                rangeHighlighter.lineMarkerRenderer = leanFileProgressFillingLineMarkerRender
+                ret.add(rangeHighlighter)
+            }
+            ret
         }
-        return ret
     }
 
     private suspend fun withBackgroundFileProgress(action: suspend (reporter: ProgressReporter) -> Unit) {
@@ -361,7 +369,12 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
      * TODO maybe it should not always keep alive
      */
     private fun keepAlive() {
-        scopeIO.launch {
+        // Exactly one keep-alive loop per file: every session (re)connect calls this, so cancel the previous
+        // loop before starting a new one. Otherwise loops accumulate against the shared `session` field and
+        // never terminate. Launched on the project scope (not a free, never-cancelled IO scope) so it is torn
+        // down on project dispose instead of leaking for the IDE's lifetime.
+        keepAliveJob?.cancel()
+        keepAliveJob = scope.launch(Dispatchers.IO) {
             while (true) {
                 delay(9 * 1000)
                 try {
