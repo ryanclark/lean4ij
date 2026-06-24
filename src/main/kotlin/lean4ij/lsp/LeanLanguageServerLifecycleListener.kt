@@ -6,6 +6,7 @@ import com.intellij.openapi.project.Project
 import com.redhat.devtools.lsp4ij.LanguageServerWrapper
 import com.redhat.devtools.lsp4ij.ServerStatus
 import com.redhat.devtools.lsp4ij.lifecycle.LanguageServerLifecycleListener
+import lean4ij.project.EditorHoverHighlightService
 import lean4ij.project.LeanProjectService
 import lean4ij.util.Constants
 import org.eclipse.lsp4j.Hover
@@ -76,7 +77,7 @@ class LeanLanguageServerLifecycleListener(val project: Project) {
                 //      in org.eclipse.lsp4j.services.TextDocumentService.hover
                 //      So why could it fail to cast to Hover?
                 try {
-                    leanProjectService.highlightCurrentContent(message.result as Hover?)
+                    project.service<EditorHoverHighlightService>().highlightCurrentContent(message.result as Hover?)
                 } catch (e: Exception) {
                     thisLogger().error("Failed to cast message.result to Hover with result ${message.result}", e)
                     throw e

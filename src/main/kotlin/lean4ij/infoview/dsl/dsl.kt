@@ -253,16 +253,14 @@ class InfoObjectModel(
         }
         end = sb.length
         fullText = sb.substring(start!!, end!!)
-        if (attr.isNotEmpty()) {
-            // Resolve the scheme once and the attributes at build time, instead of re-resolving the manager +
-            // scheme per highlighter at apply time on this hot render path.
-            val scheme = EditorColorsManager.getInstance().globalScheme
-            val rangeStart = start!!
-            val rangeEnd = end!!
-            for (key in attr) {
-                val attributes = scheme.getAttributes(key) ?: continue
-                attrs.add { editorEx ->
-                    editorEx.markupModel.addRangeHighlighter(rangeStart, rangeEnd, HighlighterLayer.SYNTAX, attributes, HighlighterTargetArea.EXACT_RANGE)
+        // Resolve the scheme/attributes inside the deferred action (apply time), not here: this method runs in
+        // unit tests without an Application, where EditorColorsManager.getInstance() would NPE.
+        val rangeStart = start!!
+        val rangeEnd = end!!
+        for (key in attr) {
+            attrs.add { editorEx ->
+                EditorColorsManager.getInstance().globalScheme.getAttributes(key)?.let {
+                    editorEx.markupModel.addRangeHighlighter(rangeStart, rangeEnd, HighlighterLayer.SYNTAX, it, HighlighterTargetArea.EXACT_RANGE)
                 }
             }
         }
