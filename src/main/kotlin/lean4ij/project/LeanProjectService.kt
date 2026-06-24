@@ -299,25 +299,21 @@ class LeanProjectService(val project: Project, val scope: CoroutineScope)  {
      * ```
      */
     fun getGoToLocation(targets: List<DefinitionTarget>) {
-        targets.firstOrNull().let { target ->
-            if (target == null) {
-                return@let
-            }
-            // TODO this must be tested if it work in windows
-            val file = LocalFileSystem.getInstance().findFileByNioFile(Path(URL(target.targetUri).path))?:return@let
-            // TODO UTF_8 might fail for some locale, but no better way currently for it
-            val content = String(file.contentsToByteArray(), StandardCharsets.UTF_8)
-            // TODO also impl select? currently the caret put at the start pos
-            val offset = StringUtil.lineColToOffset(
-                content,
-                target.targetRange.start.line,
-                target.targetRange.start.character)
-            project.service<LeanProjectService>().scope.launch(Dispatchers.EDT) {
-                FileEditorManager.getInstance(project).openTextEditor(
-                    OpenFileDescriptor(project, file, offset),
-                    true
-                )
-            }
+        val target = targets.firstOrNull() ?: return
+        // TODO this must be tested if it work in windows
+        val file = LocalFileSystem.getInstance().findFileByNioFile(Path(URL(target.targetUri).path)) ?: return
+        // TODO UTF_8 might fail for some locale, but no better way currently for it
+        val content = String(file.contentsToByteArray(), StandardCharsets.UTF_8)
+        // TODO also impl select? currently the caret put at the start pos
+        val offset = StringUtil.lineColToOffset(
+            content,
+            target.targetRange.start.line,
+            target.targetRange.start.character)
+        scope.launch(Dispatchers.EDT) {
+            FileEditorManager.getInstance(project).openTextEditor(
+                OpenFileDescriptor(project, file, offset),
+                true
+            )
         }
     }
 

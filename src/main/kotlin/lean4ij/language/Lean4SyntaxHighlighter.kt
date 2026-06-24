@@ -32,8 +32,10 @@ class Lean4SyntaxHighlighter : SyntaxHighlighterBase() {
         // OPERATION_SIGN, so it inherits the active theme's operator color (no bundled default); themeable via
         // LeanColorSettingsPage.
         val LEAN_OPERATOR: TextAttributesKey = createTextAttributesKey("LEAN_OPERATOR", DefaultLanguageHighlighterColors.OPERATION_SIGN)
-    }
 
+    // The keys and their single-element arrays are interned/immutable, so keep them in the companion: a fresh
+    // Lean4SyntaxHighlighter is created per getSyntaxHighlighter call, which would otherwise re-allocate ~15
+    // single-element arrays each time.
     val SEPARATOR: TextAttributesKey = createTextAttributesKey("LEAN_SEPARATOR", DefaultLanguageHighlighterColors.OPERATION_SIGN)
     val KEY: TextAttributesKey = createTextAttributesKey("LEAN_KEY", DefaultLanguageHighlighterColors.KEYWORD)
     val VALUE: TextAttributesKey = createTextAttributesKey("LEAN_VALUE", DefaultLanguageHighlighterColors.STRING)
@@ -56,6 +58,7 @@ class Lean4SyntaxHighlighter : SyntaxHighlighterBase() {
     val DEF_NAME_KEYS: Array<TextAttributesKey> = arrayOf(LeanConstReferenceAnnotator.LEAN_DEFINITION)
     val THEOREM_NAME_KEYS: Array<TextAttributesKey> = arrayOf(LeanConstReferenceAnnotator.LEAN_THEOREM)
     val OPERATOR_KEYS: Array<TextAttributesKey> = arrayOf(LEAN_OPERATOR)
+    }
 
 
     override fun getHighlightingLexer(): Lexer {

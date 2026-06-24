@@ -1,26 +1,24 @@
 package lean4ij.util
 
+import java.io.IOException
 import java.net.InetAddress
-import java.net.ServerSocket
 import java.util.*
 import javax.net.ServerSocketFactory
 
 
 object OsUtil {
 
-    private fun detectOperatingSystem(): String {
+    // os.name does not change at runtime, so detect once.
+    private val operatingSystem: String by lazy {
         val osName = System.getProperty("os.name").lowercase()
-
-        return when {
+        when {
             "windows" in osName -> "Windows"
             listOf("mac", "nix", "sunos", "solaris", "bsd").any { it in osName } -> "*nix"
             else -> "Other"
         }
     }
 
-    fun isWindows() : Boolean {
-        return detectOperatingSystem() == "Windows";
-    }
+    fun isWindows(): Boolean = operatingSystem == "Windows"
 
     fun findAvailableTcpPort(): Int {
         val minPort = 50000
@@ -44,14 +42,14 @@ object OsUtil {
         return candidatePort
     }
 
+    // Note: TOCTOU. The port is free at probe time but another process can bind it before the caller does;
+    // callers accept this small race rather than threading the bound socket through to the server.
     private fun isPortAvailable(port: Int): Boolean {
-        try {
-            val serverSocket: ServerSocket =
-                ServerSocketFactory.getDefault().createServerSocket(port, 1, InetAddress.getByName("localhost"))
-            serverSocket.close()
-            return true
-        } catch (ex: Exception) {
-            return false
+        return try {
+            ServerSocketFactory.getDefault().createServerSocket(port, 1, InetAddress.getByName("localhost")).use { }
+            true
+        } catch (ex: IOException) {
+            false
         }
     }
 
