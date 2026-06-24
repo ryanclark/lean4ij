@@ -3,6 +3,7 @@ package lean4ij.infoview.external
 import com.google.gson.Gson
 import com.google.gson.JsonElement
 import com.intellij.notification.BrowseNotificationAction
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
@@ -13,8 +14,6 @@ import io.ktor.server.engine.*
 import io.ktor.server.netty.*
 import io.ktor.server.routing.*
 import io.ktor.server.websocket.*
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -34,6 +33,7 @@ import java.io.File
 import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.nio.file.Paths
+import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * External infoview service, bridging the http service and the lean project service
@@ -41,7 +41,15 @@ import java.nio.file.Paths
  * TODO should this be merged with [JcefInfoviewService]?
  */
 @Service(Service.Level.PROJECT)
-class ExternalInfoViewService(val project: Project) {
+class ExternalInfoViewService(val project: Project) : Disposable {
+
+    companion object {
+        /** Bound on the replayed-notification buffer (a single-writer ring); drops oldest beyond this. */
+        private const val MAX_REPLAY_MESSAGES = 1000
+    }
+
+    /** The Netty engine, stopped in [dispose]; otherwise its event-loop threads and TCP port leak. */
+    private var embeddedServer: EmbeddedServer<*, *>? = null
 
     /**
      * using property rather than field for avoiding cyclic service injection
@@ -74,6 +82,10 @@ class ExternalInfoViewService(val project: Project) {
                     //      hence maybe skip it?
                     val event = InfoviewEvent("serverNotification", it)
                     notificationMessages.add(event)
+                    // Single writer (this collector), so the check-then-remove cap is race free.
+                    while (notificationMessages.size > MAX_REPLAY_MESSAGES) {
+                        notificationMessages.removeAt(0)
+                    }
                     events.emit(event)
                 }
             }
@@ -109,9 +121,9 @@ class ExternalInfoViewService(val project: Project) {
             }
         }
 
-        val embeddedServer = embeddedServer(Netty, port = port, module = module)
-
-        embeddedServer.start(wait = false)
+        val server = embeddedServer(Netty, port = port, module = module)
+        embeddedServer = server
+        server.start(wait = false)
 
         val url = "http://127.0.0.1:$port"
         val message = "infoview server start at $url"
@@ -145,12 +157,17 @@ class ExternalInfoViewService(val project: Project) {
      *      Not sure if the infoview is designed in such a way or not, it's kind of lazy
      * TODO and it may expand infinitely?
      */
-    val notificationMessages : MutableList<InfoviewEvent> = mutableListOf()
+    // Appended from the serverEvent collector coroutine and copied from each websocket coroutine (Netty
+    // threads); a plain ArrayList raced (ConcurrentModificationException during Gson serialization) and grew
+    // without bound. CopyOnWriteArrayList makes the concurrent read/write safe; the cap above bounds it.
+    val notificationMessages : MutableList<InfoviewEvent> = CopyOnWriteArrayList()
 
     /**
      * This is for showing the goal without moving the cursor at the startup
      * TODO this should be handled earlier
      */
+    // Written from the caretEvent collector, read from websocket coroutines: publish across threads.
+    @Volatile
     var previousCursorLocation : CursorLocation? = null
 
     suspend fun awaitInitializedResult() : InitializeResult = leanProjectService.awaitInitializedResult()
@@ -161,8 +178,6 @@ class ExternalInfoViewService(val project: Project) {
     fun events(): Flow<InfoviewEvent> {
         return events.asSharedFlow()
     }
-
-    private val scope = CoroutineScope(Dispatchers.IO)
 
     suspend fun getSession(uri: String) : String = leanProjectService.getSession(uri)
 
@@ -178,6 +193,13 @@ class ExternalInfoViewService(val project: Project) {
             leanProjectService.file(change.key).applyEdit(change.value)
         }
         return null
+    }
+
+    override fun dispose() {
+        // Stop Netty so its event-loop threads and the bound TCP port are released on project close. The
+        // caretEvent/serverEvent collectors run on leanProjectService.scope and are cancelled on dispose.
+        embeddedServer?.stop(1000, 2000)
+        embeddedServer = null
     }
 }
 

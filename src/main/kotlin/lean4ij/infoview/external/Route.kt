@@ -121,6 +121,9 @@ fun externalInfoViewRoute(project: Project, service : ExternalInfoViewService) :
      * TODO weird, sometimes it seems that all messages no result?
      */
     webSocket("/ws") {
+        // One MessageBusConnection per websocket connection, disconnected in finally below. Otherwise every
+        // browser tab / infoview reconnect leaks a permanent EditorColorsListener for the project's lifetime.
+        val themeBusConnection = project.messageBus.connect()
         try {
             val outgoingJob = launch {
                 // TODO this is a temporary try catch for https://github.com/onriv/lean4ij/issues/57
@@ -129,8 +132,7 @@ fun externalInfoViewRoute(project: Project, service : ExternalInfoViewService) :
                     val theme = createThemeCss(EditorColorsManager.getInstance().globalScheme)
                     sendWithLog(Gson().toJson(InfoviewEvent("updateTheme", mapOf("theme" to theme))))
 
-                    // TODO maybe this should be removed if disconnected for avoiding leak?
-                    project.messageBus.connect().subscribe<EditorColorsListener>(EditorColorsManager.TOPIC, EditorColorsListener {
+                    themeBusConnection.subscribe<EditorColorsListener>(EditorColorsManager.TOPIC, EditorColorsListener {
                         val scheme = it ?: EditorColorsManager.getInstance().globalScheme
                         scopeIO.launch {
                             @Suppress("NAME_SHADOWING")
@@ -235,6 +237,8 @@ fun externalInfoViewRoute(project: Project, service : ExternalInfoViewService) :
             ex.cause?.printStackTrace()
             ex.printStackTrace()
             thisLogger().error(ex)
+        } finally {
+            themeBusConnection.disconnect()
         }
     }
 
