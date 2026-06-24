@@ -3,7 +3,6 @@ package lean4ij.language
 import com.intellij.codeInsight.template.TemplateActionContext
 import com.intellij.codeInsight.template.TemplateContextType
 import com.intellij.openapi.components.service
-import lean4ij.sdk.LeanLibrary
 import lean4ij.setting.Lean4Settings
 
 abstract class BaseLean4TemplateContext(presentableName : String) : TemplateContextType(presentableName) {

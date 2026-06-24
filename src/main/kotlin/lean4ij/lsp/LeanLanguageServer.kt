@@ -234,23 +234,6 @@ class LeanLanguageServer(val languageServer: InternalLeanLanguageServer) {
                 }
 
             })
-            .registerTypeAdapter(RpcCallParams::class.java, object : JsonDeserializer<RpcCallParams> {
-                override fun deserialize(p0: JsonElement, p1: Type, p2: JsonDeserializationContext): RpcCallParams {
-                    val method = p0.asJsonObject.getAsJsonPrimitive("method").asString
-                    when (method) {
-                        Constants.RPC_METHOD_INFO_TO_INTERACTIVE -> return p2.deserialize<InteractiveInfoParams>(
-                            p0,
-                            InteractiveInfoParams::class.java
-                        )
-
-                        Constants.RPC_METHOD_GET_INTERACTIVE_GOALS -> return p2.deserialize<InteractiveInfoParams>(
-                            p0,
-                            InteractiveGoalsParams::class.java
-                        )
-                    }
-                    throw IllegalStateException("Unsupported RPC method: $method")
-                }
-            })
             // TODO this adapter is also repetitive.
             .registerTypeAdapter(
                 StrictOrLazy::class.java,

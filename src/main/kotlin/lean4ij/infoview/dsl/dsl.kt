@@ -18,8 +18,6 @@ import lean4ij.lsp.data.FoldingData
 import lean4ij.lsp.data.InteractiveHypothesisBundle
 import lean4ij.lsp.data.SubexprInfo
 import lean4ij.lsp.data.TaggedText
-import java.lang.ProcessHandle.Info
-
 /** Holds the [Disposable] parenting the current render's fold-state listeners; swapped each render. */
 private val FOLD_LISTENER_DISPOSABLE = Key.create<Disposable>("lean4ij.infoview.foldListenerDisposable")
 
@@ -166,9 +164,6 @@ class InfoObjectBuilder {
 
     fun setContextInfo(contextInfo: ContextInfo?) {
         this.contextInfo = contextInfo
-    }
-
-    fun onClick() {
     }
 }
 

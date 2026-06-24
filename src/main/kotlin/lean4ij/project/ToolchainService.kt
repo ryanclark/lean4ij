@@ -21,15 +21,6 @@ class ElanService {
     val elanBinPath = elanHomePath.resolve("bin")
     val elanPath = elanBinPath.resolve("elan")
 
-    fun getDefaultLakePath(): Path {
-        val elanBinPath = Path.of(System.getProperty("user.home"), ".elan", "bin")
-        return elanBinPath.resolve("lake")
-    }
-    fun getDefaultElanPath(): Path {
-        val elanBinPath = Path.of(System.getProperty("user.home"), ".elan", "bin")
-        return elanBinPath.resolve("elan")
-    }
-
     /**
      * All versions are extracted locally from the lean4 repo with the following shell command:
      * ```
@@ -113,10 +104,6 @@ class ToolchainService(val project: Project) {
     var toolChainPath: Path? = null
     var lakePath:  Path? = null
     var leanPath: Path? = null
-
-    // This is for creating new project
-    var defaultLakePath: Path? = null
-    var defaultElanPath: Path? = null
 
     companion object {
         // TODO DRY this with the above elan service

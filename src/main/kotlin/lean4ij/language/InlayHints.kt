@@ -6,10 +6,7 @@ import com.intellij.codeInsight.daemon.impl.HighlightInfo
 import com.intellij.codeInsight.daemon.impl.HintRenderer
 import com.intellij.codeInsight.hints.declarative.*
 import com.intellij.codeInsight.hints.declarative.impl.DeclarativeInlayHintsPassFactory
-import com.intellij.lang.ASTNode
 import com.intellij.lang.annotation.HighlightSeverity
-import com.intellij.lang.folding.FoldingBuilderEx
-import com.intellij.lang.folding.FoldingDescriptor
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.components.service
@@ -589,7 +586,6 @@ class DiagInlayManager(var editor: TextEditor) : MarkupModelListener {
             .disableSoftWrapping(true)
 
         ApplicationManager.getApplication().invokeLater {
-            info.endOffset
             val hint = editor.editor.inlayModel.addAfterLineEndElement(info.actualEndOffset - 1, properties, renderer) ?: return@invokeLater
 
             this.currentHints[range] = hint
@@ -623,24 +619,3 @@ class DiagInlayManager(var editor: TextEditor) : MarkupModelListener {
     }
 }
 
-/**
- * TODO what's DumbAware for?
- * A try for using custom folding
- * see: https://plugins.jetbrains.com/docs/intellij/folding-builder.html#define-a-folding-builder
- * TODO custom folding seems not good enough as inlay hints and hence it's commented out in plugin.xml
- */
-class PlaceholderFolding : FoldingBuilderEx(), DumbAware {
-    override fun buildFoldRegions(root: PsiElement, document: Document, quick: Boolean): Array<FoldingDescriptor> {
-        val placeholders = Regex("""\b_\b""").findAll(document.text)
-        return emptyArray()
-    }
-
-    override fun getPlaceholderText(node: ASTNode): String? {
-        TODO("Not yet implemented")
-    }
-
-    override fun isCollapsedByDefault(node: ASTNode): Boolean {
-        return true
-    }
-
-}

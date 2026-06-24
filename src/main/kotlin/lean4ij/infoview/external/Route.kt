@@ -248,7 +248,7 @@ fun externalInfoViewRoute(project: Project, service : ExternalInfoViewService) :
         if (ret == null) {
             call.respond("null")
         } else {
-            call.respondJson(ret!!)
+            call.respondJson(ret)
         }
     }
 
@@ -337,10 +337,6 @@ private suspend fun WebSocketSession.sendWithLog(msg: String) {
 
 inline fun <reified T> fromJson(json: String) : T {
     return LeanLanguageServer.gson.fromJson(json, T::class.java)
-}
-
-fun toJsonElement(json: String): JsonElement {
-    return LeanLanguageServer.gson.fromJson(json, JsonElement::class.java)
 }
 
 fun toJson(any: Any): String {

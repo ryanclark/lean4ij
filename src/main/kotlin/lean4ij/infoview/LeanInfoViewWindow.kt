@@ -18,7 +18,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import lean4ij.infoview.dsl.clearFoldListeners
 import lean4ij.project.LeanProjectService
-import javax.swing.BorderFactory
 
 
 class InfoViewEditorFactory(val project: Project) {
@@ -120,16 +119,6 @@ class LeanInfoViewWindow(val toolWindow: ToolWindow) : SimpleToolWindowPanel(tru
             }
         }
         leanInfoviewService.toolWindow = this
-    }
-
-    private val BORDER = BorderFactory.createEmptyBorder(3, 0, 5, 0)
-
-    // TODO
-    private fun render(map: Map<*, *>): String {
-        for (g in map["goals"] as List<*>) {
-            return ""
-        }
-        return ""
     }
 
     /**

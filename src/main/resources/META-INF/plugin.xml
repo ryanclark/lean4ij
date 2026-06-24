@@ -274,8 +274,6 @@
     </actions>
 
     <applicationListeners>
-        <listener class="lean4ij.project.listeners.MyApplicationActivationListener" topic="com.intellij.openapi.application.ApplicationActivationListener"/>
-        
         <listener class="lean4ij.project.listeners.LeanFileOpenedListener" topic="com.intellij.openapi.fileEditor.FileOpenedSyncListener" />
     </applicationListeners>
 

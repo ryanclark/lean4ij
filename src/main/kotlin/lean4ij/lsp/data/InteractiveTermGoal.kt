@@ -1,7 +1,5 @@
 package lean4ij.lsp.data
 
-import com.intellij.openapi.editor.Editor
-import com.intellij.openapi.editor.colors.EditorColorsManager
 import lean4ij.infoview.Lean4TextAttributesKeys
 import lean4ij.infoview.dsl.*
 
