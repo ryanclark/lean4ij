@@ -463,8 +463,9 @@ class PlaceHolderInlayHintsProvider : InlayHintsProvider {
     }
 
 
-    override fun createCollector(file: PsiFile, editor: Editor): InlayHintsCollector {
-        return providers.computeIfAbsent(file.virtualFile.path) {
+    override fun createCollector(file: PsiFile, editor: Editor): InlayHintsCollector? {
+        val virtualFile = file.virtualFile ?: return null
+        return providers.computeIfAbsent(virtualFile.path) {
             PlaceHolderInlayHintsCollector(editor, editor.project)
         }
     }

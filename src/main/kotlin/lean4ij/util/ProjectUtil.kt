@@ -41,7 +41,7 @@ fun Project.notify(content: String, action: (Notification) -> Notification) {
         // TODO custom notification group
         .getNotificationGroup("Custom Notification Group")
         .createNotification(content, NotificationType.INFORMATION)
-    action(notification)
+    action(notification).notify(this)
 }
 
 val Project.leanProjectService get(): LeanProjectService = service()

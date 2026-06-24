@@ -3,11 +3,8 @@ package lean4ij.sdk
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.AdditionalLibraryRootsProvider
 import com.intellij.openapi.vfs.VfsUtil
-import com.intellij.openapi.vfs.VirtualFile
-import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.isDirectory
-import kotlin.io.path.name
 import kotlin.io.path.notExists
 
 /**
@@ -16,16 +13,15 @@ import kotlin.io.path.notExists
 class Lean4StdLibraryProvider : AdditionalLibraryRootsProvider() {
     override fun getAdditionalProjectLibraries(project: Project): Collection<LeanLibrary> {
         val basePath = project.basePath ?: return listOf()
-        val packagesPath = Path.of(basePath, ".lake")
-        if (packagesPath.notExists()) {
+        // There is only ever one `.lake/packages` directory, so resolve it directly. The previous
+        // Files.list(.lake) returned a Stream backed by an open directory handle that was never closed,
+        // leaking a file descriptor on every library-root re-query during indexing.
+        val packagesPath = Path.of(basePath, ".lake", "packages")
+        if (packagesPath.notExists() || !packagesPath.isDirectory()) {
             return listOf()
         }
-        return Files.list(packagesPath)
-            .filter { it.isDirectory() }
-            .filter { it.name == "packages" }
-            .map {
-                LeanLibrary(it.name, VfsUtil.findFile(it, true)!!)
-        }.toList()
+        val root = VfsUtil.findFile(packagesPath, true) ?: return listOf()
+        return listOf(LeanLibrary("packages", root))
     }
 
 }

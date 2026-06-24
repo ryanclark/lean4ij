@@ -450,9 +450,9 @@ class Lean4ModuleBuilder(private val leanWizard: LeanProjectWizard = LeanProject
             val elanService = service<ElanService>()
             val command = "${elanService.elanBinPath}${File.separatorChar}${quickStarterModel.lakeCommand()}"
             val envs = if (quickStarterModel.useProxyProperty.get()) {
-                mapOf()
+                mapOf("HTTPS_PROXY" to quickStarterModel.proxyValueProperty.get().trim())
             } else {
-                mapOf("HTTPS_PROXY" to quickStarterModel.proxyValueProperty.get())
+                mapOf()
             }
             // TODO running this command directly here may block the ui
             val result = command.execute(File(quickStarterModel.locationProperty.get()), envs)
