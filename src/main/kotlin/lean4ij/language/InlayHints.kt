@@ -13,6 +13,7 @@ import com.intellij.lang.folding.FoldingDescriptor
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.editor.*
 import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.editor.ex.MarkupModelEx
@@ -30,6 +31,7 @@ import com.intellij.openapi.util.text.StringUtil
 import com.intellij.psi.PsiElement
 import com.intellij.psi.PsiFile
 import com.jetbrains.rd.util.lifetime.intersect
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.launch
@@ -179,14 +181,25 @@ abstract class InlayHintBase(protected val editor: Editor, protected val project
             hints = CompletableFuture<HintSet>()
             hintCache.insert(leanFile, element.containingFile.modificationStamp, hints)
             leanProject.scope.launch {
-                val content = editor.document.text
-                val actualHints = computeFor(leanFile, content)
-                hints.complete(actualHints)
+                try {
+                    val content = editor.document.text
+                    val actualHints = computeFor(leanFile, content)
+                    hints.complete(actualHints)
 
-                // request rerender of hints
-                // reference: https://github.com/redhat-developer/lsp4ij/blob/main/src/main/java/com/redhat/devtools/lsp4ij/internal/InlayHintsFactoryBridge.java#L59
+                    // request rerender of hints
+                    // reference: https://github.com/redhat-developer/lsp4ij/blob/main/src/main/java/com/redhat/devtools/lsp4ij/internal/InlayHintsFactoryBridge.java#L59
 
-                debounceRecompute(element.containingFile)
+                    debounceRecompute(element.containingFile)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // The Lean server restarts often (transient closed-file/RPC errors); don't let this leak as
+                    // an unhandled coroutine exception. Complete the future with empty hints so collectFromElement
+                    // doesn't block. The empty HintSet is cached under the current modificationStamp, so the same
+                    // stamp keeps returning it; hints only recover on the next edit (a stamp change), not the next pass.
+                    hints.complete(HintSet())
+                    thisLogger().debug("Skip inlay hints for ${leanFile.virtualFile?.path} (language server unavailable/restarting): ${e.message}")
+                }
             }
         }
 
@@ -404,15 +417,16 @@ class PlaceHolderInlayHintsCollector(editor: Editor, project: Project?) : InlayH
 
         val hints = HintSet()
         val leanProject = project.service<LeanProjectService>()
+        // Resolve the path, language server and document id once: they're invariant across matches, and
+        // re-resolving the server per match re-runs the Lake package lookup. virtualFile can be null, so bail
+        // rather than assert with !!.
+        val quoted = LspUtil.quote(file.virtualFile?.path ?: return hints)
+        val languageServer = leanProject.languageServerForFile(quoted).await().languageServer
+        val textDocument = TextDocumentIdentifier(quoted)
         for (m in Regex("""\b_\b""").findAll(content)) {
-            // TODO what if it's not start?
-            // Here it's the internal language server
-            val languageServer = leanProject.languageServer.await().languageServer
             val lineColumn = StringUtil.offsetToLineColumn(content, m.range.first)
-            // Here we also have another lean4ij.lsp.data.Position defined and imported
-            // Hence here using the full qualified name
+            // A second Position type (lean4ij.lsp.data.Position) is imported, so qualify the lsp4j one here.
             val position = org.eclipse.lsp4j.Position(lineColumn.line, lineColumn.column)
-            val textDocument = TextDocumentIdentifier(LspUtil.quote(file.virtualFile!!.path))
             val hover = languageServer.hover(HoverParams(textDocument, position)).await()
             // TODO there are cases here that here hover is null
             if (hover != null && hover.contents.isRight) {

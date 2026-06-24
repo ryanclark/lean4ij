@@ -1,0 +1,44 @@
+<?xml version='1.0'?>
+<!--
+  Default colors for lean4ij's custom symbol keys in the bundled LIGHT (Default) scheme.
+
+  Mirror of LeanDarcula.xml: every Lean symbol key inherits the active light theme's standard role color
+  (classes, class references, function calls, operators, keywords, constants), so Lean matches how other
+  languages are colored. Only data constructors get an explicit value, because their STATIC_FIELD fallback is
+  the default foreground in many light themes. Overridable in Settings | Editor | Color Scheme | Lean.
+-->
+<list>
+  <!-- Data constructors / enum members (none, some, inductive ctors). A readable enum-member purple for light. -->
+  <option name="LEAN_CONSTRUCTOR">
+    <value>
+      <option name="FOREGROUND" value="871094"/>
+    </value>
+  </option>
+  <!-- Theorems/lemmas: a distinct color, not def-blue, not orange, not the type green/yellow. A dark pink. -->
+  <option name="LEAN_THEOREM">
+    <value>
+      <option name="FOREGROUND" value="c2185b"/>
+    </value>
+  </option>
+  <!-- Built-in / stdlib types (Option, List, Nat, Bool, ...) — a dark gold, distinct from project types
+       (green/teal LEAN_TYPE) and readable on a light background. Overrides the CLASS_NAME fallback. -->
+  <option name="LEAN_BUILTIN_TYPE">
+    <value>
+      <option name="FOREGROUND" value="8a6d00"/>
+    </value>
+  </option>
+  <!-- Imported / stdlib functions (le, bmax, List.foldl, ...) — a dark teal, distinct from the blue of in-file
+       defs and the pink of theorems, readable on a light background. Overrides the FUNCTION_CALL fallback. -->
+  <option name="LEAN_IMPORTED_FUNCTION">
+    <value>
+      <option name="FOREGROUND" value="00695c"/>
+    </value>
+  </option>
+  <!-- `inline code` inside comments — a darker blue-grey, readable on a light background and distinct from the
+       lighter comment prose. The DOC_COMMENT_MARKUP fallback is often unset, so set explicitly. -->
+  <option name="LEAN_COMMENT_CODE">
+    <value>
+      <option name="FOREGROUND" value="607d8b"/>
+    </value>
+  </option>
+</list>

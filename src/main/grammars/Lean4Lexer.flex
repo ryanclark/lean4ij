@@ -26,9 +26,14 @@ import static lean4ij.language.psi.TokenType.*;
   private int commentDepth;
   private boolean isInsideDocComment;
   private int originalState = YYINITIAL;
+  // Token to emit for the next declaration name: set when a declaration keyword (structure/def/theorem/...)
+  // is matched, consumed in the DECL_NAME state. Colors a declaration's name by its kind (type / def /
+  // theorem) from the keyword rather than from capitalization.
+  private IElementType pendingNameType;
 %}
 
 %state BLOCK_COMMENT_INNER
+%state DECL_NAME
 
 EOL                 = \R
 WHITE_SPACE         = [ \t\r\n]+
@@ -50,14 +55,19 @@ HEX_DIGIT           = [0-9a-fA-F]
 OCT_DIGIT           = [0-8]
 
 // weird, without the \b, the scanner does not recognize the keywords
-KEYWORD_COMMAND1        = prelude|import|include|export|open|mutual
-KEYWORD_COMMAND_PREFIX   = local|private|protected|scoped|partial|noncomputable|unsafe
+KEYWORD_COMMAND1        = prelude|module|import|include|export|open|mutual|universe
+KEYWORD_COMMAND_PREFIX   = public|local|private|protected|scoped|partial|noncomputable|unsafe
 KEYWORD_MODIFIER        = renaming|hiding|where|extends|using|with|at|rec|deriving
-KEYWORD_COMMAND2        = syntax|elab|elab_rules|macro_rules|macro
+KEYWORD_COMMAND2        = syntax|elab_rules|elab|macro_rules|macro|notation|infixl|infix|prefix|postfix
 KEYWORD_COMMAND3        = namespace|section|end
-KEYWORD_COMMAND4        = class|def|lemma|example|theorem|instance|structure|set_option|vairable|infixr
+// Declaration keywords, split by the kind of name that follows so DECL_NAME can color it precisely.
+KEYWORD_TYPE_DECL       = structure|inductive|class
+KEYWORD_DEF_DECL        = def|abbrev|instance|axiom|opaque
+KEYWORD_THM_DECL        = theorem|lemma|example
+KEYWORD_NAMELESS_DECL   = set_option|variable|infixr
 KEYWORD_COMMAND5        = #check|#guard_msgs|#eval|#reduce|#synth|#help
-KEYWORD_COMMAND6        = match|have|with|by|in|fun
+// Term/tactic-level keywords that live INSIDE command bodies (colored as keywords, not command-starting).
+KEYWORD_COMMAND6        = match|have|with|by|in|fun|let|do|show|from|calc|if|then|else|return|suffices|nomatch|assume|try|for|while|unless|mut|case
 KEYWORD_SORRY = sorry
 DEFAUTL_TYPE = Type|(Type \*)
 
@@ -79,9 +89,18 @@ ALPHA_NUM = [a-zA-Z0-9_]
 SUPERSCRIPT = [⁻¹²³⁴⁵⁶⁷⁸⁹⁰]
 SUBSCRIPT = [₁₂₃₄₅₆₇₈₉₀]
 IDENTIFIER              = ({ALPHA_NUM} | {GREEK}|{digit}|{quote}|{SUPERSCRIPT}|{SUBSCRIPT})+
+// Capitalized identifier (Lean convention: type / namespace / constructor reference). Emitted as TYPE_NAME so
+// lexer-only surfaces color it as a type: the lsp4ij hover popup renders a ```lean code fence through the
+// SyntaxHighlighter with no annotator pass. In the editor the resolution annotator refines this further.
+UPPER_IDENTIFIER        = [A-Z]({ALPHA_NUM}|{GREEK}|{digit}|{quote}|{SUPERSCRIPT}|{SUBSCRIPT})*
 
 NUMBER              = [0-9]+
 NEGATIVE_NUMBER     = -{NUMBER}
+// Radix literals: 0x hex, 0b binary, 0o octal. Matched as one NUMBER token (before IDENTIFIER) so `0x40`
+// colors as a single number rather than splitting into `0` plus identifier `x40`.
+HEX_NUMBER          = 0[xX]{HEX_DIGIT}+
+BIN_NUMBER          = 0[bB][01]+
+OCT_NUMBER          = 0[oO][0-7]+
 
 // the following part is copied from intellij-haskell
 newline             = \r|\n|\r\n
@@ -92,7 +111,7 @@ include_directive   = "#"{white_char}*"include"{white_char}*\"({small}|{large}|{
 white_space         = {white_char}+
 
 underscore          = "_"
-small               = [a-z] | {underscore} | [\u03B1-\u03C9] | 𝑖 | 𝕧 | µ | ¬
+small               = [a-z] | {underscore} | [\u03B1-\u03C9] | 𝑖 | 𝕧 | µ
 large               = [A-Z] | [\u0391-\u03A9] | ℝ | ℂ | ℕ | ℤ | ℚ
 
 digit               = [0-9] | [\u2070-\u2079] | [\u2080-\u2089]
@@ -166,7 +185,7 @@ right_uni_double_bracket = "⟧"
 template_trigger = \\[^  \t\r\n]+
 
 // this part is copied from julia-intellij
-MISC_COMPARISON_SYM      =[∉∋∌⊆⊈⊂⊄⊊∝∊∍∥∦∷∺∻∽∾≁≃≄≅≆≇≈≉≊≋≌≍≎≐≑≒≓≔≕≖≗≘≙≚≛≜≝≞≟≣≦≧≨≩≪≫≬≭≮≯≰≱≲≳≴≵≶≷≸≹≺≻≼≽≾≿⊀⊁⊃⊅⊇⊉⊋⊏⊐⊑⊒⊜⊩⊬⊮⊰⊱⊲⊳⊴⊵⊶⊷⋍⋐⋑⋕⋖⋗⋘⋙⋚⋛⋜⋝⋞⋟⋠⋡⋢⋣⋤⋥⋦⋧⋨⋩⋪⋫⋬⋭⋲⋳⋴⋵⋶⋷⋸⋹⋺⋻⋼⋽⋾⋿⟈⟉⟒⦷⧀⧁⧡⧣⧤⧥⩦⩧⩪⩫⩬⩭⩮⩯⩰⩱⩲⩳⩴⩵⩶⩷⩸⩹⩺⩻⩼⩽⩾⩿⪀⪁⪂⪃⪄⪅⪆⪇⪈⪉⪊⪋⪌⪍⪎⪏⪐⪑⪒⪓⪔⪕⪖⪗⪘⪙⪚⪛⪜⪝⪞⪟⪠⪡⪢⪣⪤⪥⪦⪧⪨⪩⪪⪫⪬⪭⪮⪯⪰⪱⪲⪳⪴⪵⪶⪷⪸⪹⪺⪻⪼⪽⪾⪿⫀⫁⫂⫃⫄⫅⫆⫇⫈⫉⫊⫋⫌⫍⫎⫏⫐⫑⫒⫓⫔⫕⫖⫗⫘⫙⫷⫸⫹⫺⊢⊣⟂]
+MISC_COMPARISON_SYM      =[∈≤≥≠≡∣¬∉∋∌⊆⊈⊂⊄⊊∝∊∍∥∦∷∺∻∽∾≁≃≄≅≆≇≈≉≊≋≌≍≎≐≑≒≓≔≕≖≗≘≙≚≛≜≝≞≟≣≦≧≨≩≪≫≬≭≮≯≰≱≲≳≴≵≶≷≸≹≺≻≼≽≾≿⊀⊁⊃⊅⊇⊉⊋⊏⊐⊑⊒⊜⊩⊬⊮⊰⊱⊲⊳⊴⊵⊶⊷⋍⋐⋑⋕⋖⋗⋘⋙⋚⋛⋜⋝⋞⋟⋠⋡⋢⋣⋤⋥⋦⋧⋨⋩⋪⋫⋬⋭⋲⋳⋴⋵⋶⋷⋸⋹⋺⋻⋼⋽⋾⋿⟈⟉⟒⦷⧀⧁⧡⧣⧤⧥⩦⩧⩪⩫⩬⩭⩮⩯⩰⩱⩲⩳⩴⩵⩶⩷⩸⩹⩺⩻⩼⩽⩾⩿⪀⪁⪂⪃⪄⪅⪆⪇⪈⪉⪊⪋⪌⪍⪎⪏⪐⪑⪒⪓⪔⪕⪖⪗⪘⪙⪚⪛⪜⪝⪞⪟⪠⪡⪢⪣⪤⪥⪦⪧⪨⪩⪪⪫⪬⪭⪮⪯⪰⪱⪲⪳⪴⪵⪶⪷⪸⪹⪺⪻⪼⪽⪾⪿⫀⫁⫂⫃⫄⫅⫆⫇⫈⫉⫊⫋⫌⫍⫎⫏⫐⫑⫒⫓⫔⫕⫖⫗⫘⫙⫷⫸⫹⫺⊢⊣⟂]
 MISC_PLUS_SYM      =[⊕⊖⊞⊟++∪∨⊔±∓∔∸≂≏⊎⊽⋎⋓⧺⧻⨈⨢⨣⨤⨥⨦⨧⨨⨩⨪⨫⨬⨭⨮⨹⨺⩁⩂⩅⩊⩌⩏⩐⩒⩔⩖⩗⩛⩝⩡⩢⩣]
 // temporarily removed ⋅ and ×
 // MISC_MULTIPLY_SYM      =[∘∩∧⊗⊘⊙⊚⊛⊠⊡⊓∗∙∤⅋≀⊼⋄⋆⋇⋉⋊⋋⋌⋏⋒⟑⦸⦼⦾⦿⧶⧷⨇⨰⨱⨲⨳⨴⨵⨶⨷⨸⨻⨼⨽⩀⩃⩄⩋⩍⩎⩑⩓⩕⩘⩚⩜⩞⩟⩠⫛⊍▷⨝⟕⟖⟗]
@@ -182,7 +201,7 @@ MISC_ARROW_SYM      =[\u2190\u2192\u2194\u219a\u219b\u219e\u21a0\u21a2\u21a3\u21
 quote               = "'"
 double_quotes       = "\""
 
-forall              = "∀"
+forall              = [∀∃]
 
 symbol_no_dot       = {equal} | {at} | {backslash} | {vertical_bar} | {tilde} | {exclamation_mark} | {hash} | {dollar} | {percentage} | {ampersand} | {star} |
                         {plus} | {slash} | {lt} | {gt} | {question_mark} | {caret} | {dash} | [\u2201-\u22FF]
@@ -236,6 +255,10 @@ nhaddock_start      = {left_brace}{dash}{white_char}?{vertical_bar}
     {attribute}    {
         return ATTRIBUTE;
     }
+    // ASCII/Unicode arrows as a single token so `->` `=>` `<-` are colored as operators (not EQUAL+OTHER).
+    {left_arrow} | {right_arrow} | {double_right_arrow}    {
+        return MISC_ARROW_SYM;
+    }
     {colon}    {
         return COLON;
     }
@@ -245,12 +268,22 @@ nhaddock_start      = {left_brace}{dash}{white_char}?{vertical_bar}
     {MISC_COMPARISON_SYM}    {
         return MISC_COMPARISON_SYM;
     }
+    // Lean product/dot operators not in the MISC_MULTIPLY_SYM class: middle dot `·` (anonymous-function arg /
+    // tactic-focus bullet / cdot), dot operator `⋅`, and cartesian product `×`. Colored as operators (cyan).
+    [·⋅×]    {
+        return MISC_MULTIPLY_SYM;
+    }
+    // Boolean operators `!` (not) and `&` (in `&&`) -> operator color, so they aren't left white.
+    [!&]    {
+        return MISC_COMPARISON_SYM;
+    }
     {star}    {
     return STAR;
     }
     {forall}  {
     return FOR_ALL;
     }
+    {HEX_NUMBER}|{BIN_NUMBER}|{OCT_NUMBER}  { return NUMBER; }
     {NUMBER}                { return NUMBER; }
     {NEGATIVE_NUMBER}       { return NEGATIVE_NUMBER; }
 
@@ -296,7 +329,22 @@ nhaddock_start      = {left_brace}{dash}{white_char}?{vertical_bar}
     {KEYWORD_COMMAND3}      {
           return KEYWORD_COMMAND3;
                             }
-    {KEYWORD_COMMAND4}      {
+    {KEYWORD_TYPE_DECL}     {
+          pendingNameType = TYPE_NAME;
+          yybegin(DECL_NAME);
+          return KEYWORD_COMMAND4;
+                            }
+    {KEYWORD_DEF_DECL}      {
+          pendingNameType = DEF_NAME;
+          yybegin(DECL_NAME);
+          return KEYWORD_COMMAND4;
+                            }
+    {KEYWORD_THM_DECL}      {
+          pendingNameType = THEOREM_NAME;
+          yybegin(DECL_NAME);
+          return KEYWORD_COMMAND4;
+                            }
+    {KEYWORD_NAMELESS_DECL} {
           return KEYWORD_COMMAND4;
                             }
     {KEYWORD_COMMAND5}      {
@@ -313,6 +361,11 @@ nhaddock_start      = {left_brace}{dash}{white_char}?{vertical_bar}
     }
     {DEFAUTL_TYPE}      {
           return DEFAULT_TYPE;
+                            }
+    // Capitalized identifier (type / namespace reference) emits TYPE_NAME. Must precede {IDENTIFIER}: on equal
+    // match length the first JFlex rule wins. Lowercase identifiers fall through to {IDENTIFIER}.
+    {UPPER_IDENTIFIER}      {
+          return TYPE_NAME;
                             }
     {IDENTIFIER}            {
           return IDENTIFIER;
@@ -372,11 +425,25 @@ nhaddock_start      = {left_brace}{dash}{white_char}?{vertical_bar}
     {MISC_ARROW_SYM}        {
           return MISC_ARROW_SYM;
                             }
+    {vertical_bar}          {
+          return VERTICAL_BAR;
+                            }
 
     . {
     return OTHER;
     }
 
+}
+
+// Entered right after a declaration keyword to color the declaration's NAME by its kind, then return to
+// YYINITIAL. Whitespace between the keyword and the name is passed through. Any non-identifier (a `(`, `:`,
+// attribute, etc.; e.g. an anonymous instance or `example :`) is pushed back and DECL_NAME is left without
+// re-entry. Consequently an intervening comment (e.g. `def /- c -/ foo`) silently drops the name coloring,
+// since the comment exits DECL_NAME before the name is seen.
+<DECL_NAME> {
+    {WHITE_SPACE}  { return WHITE_SPACE; }
+    {IDENTIFIER}   { yybegin(YYINITIAL); return pendingNameType; }
+    [^]            { yypushback(1); yybegin(YYINITIAL); }
 }
 
 <BLOCK_COMMENT_INNER> {

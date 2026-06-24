@@ -1,6 +1,7 @@
 package lean4ij.lsp
 
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
@@ -33,7 +34,16 @@ class LeanLanguageServerFactory : LanguageServerFactory, LanguageServerEnablemen
      * set it to always true if no language server return while debugging
      */
     override fun isEnabled(project: Project): Boolean {
-        return lean4Settings.enableLanguageServer && project.service<LeanProjectService>().isEnable.get()
+        val isEnable = project.service<LeanProjectService>().isEnable.get()
+        val enabled = lean4Settings.enableLanguageServer && isEnable
+        if (!enabled) {
+            // Debug, not warn: isEnabled is polled frequently and is legitimately false until an editor is
+            // focused (default lazy strategy) or whenever the user disables the server, so warn-level here
+            // floods idea.log during normal operation. If this logs during churn, lsp4ij is stopping the
+            // server because the plugin reported it disabled (enableLanguageServer / isEnable).
+            thisLogger().debug("LeanLanguageServerFactory.isEnabled(project)=false (enableLanguageServer=${lean4Settings.enableLanguageServer}, isEnable=$isEnable)")
+        }
+        return enabled
     }
 
     override fun setEnabled(enabled: Boolean, project: Project) {

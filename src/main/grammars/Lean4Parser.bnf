@@ -14,58 +14,62 @@
     elementTypeClass = "lean4ij.language.Lean4TokenType"
 }
 
-tokens ::= (
-    LINE_COMMENT|
-    // WHITE_SPACE is context sensitive in lean4 and hence we will not use the default
-    // com.intellij.psi.TokenType.WHITE_SPACE which is ignored by the lexer
-    // but define our own
-    // Originally this comes from the need for hovering over the white space to show
-    // the documentation and content range
-    WHITE_SPACE|
-    STRING|
-    KEYWORD_COMMAND1|
-    KEYWORD_COMMAND_PREFIX|
-    KEYWORD_MODIFIER|
-    KEYWORD_COMMAND2|
-    KEYWORD_COMMAND3|
-    IDENTIFIER|
-    LEFT_PAREN|
-    RIGHT_PAREN|
-    LEFT_BRACKET|
-    RIGHT_BRACKET|
-    LEFT_BRACE|
-    RIGHT_BRACE|
-    LEFT_UNI_BRACKET|
-    RIGHT_UNI_BRACKET|
-    DOT|
-    MISC_COMPARISON_SYM|
-    MISC_PLUS_SYM|
-    MISC_MULTIPLY_SYM|
-    MISC_EXPONENT_SYM|
-    MISC_ARROW_SYM|
-    OTHER|
-    DOC_COMMENT|
-    BLOCK_COMMENT|
-    AT|
-    COLON|
-    MISC_COMPARISON_SYM|
-    STAR|
-    KEYWORD_COMMAND5|
-    KEYWORD_COMMAND6|
-    DEFAULT_TYPE|
-    FOR_ALL|COMMA|EQUAL|
-    NUMBER|NEGATIVE_NUMBER|
-    KEYWORD_SORRY|
-    TEMPLATE_TRIGGER|
-    ASSIGN|
-    PLACEHOLDER|
-    definition|
-    attributes
-    )*
+// Skeleton grammar: a Lean file is a sequence of top-level commands (declarations). The command skeleton is
+// parsed precisely (leading doc-comment / attributes / modifiers, the keyword, and for declarations the
+// declared name); the body (signature plus term/tactic interior) is an opaque token span, consumed up to the
+// start of the next command. This is the only tractable level for Lean, whose term/tactic syntax is
+// user-extensible via notation/macro and unparseable without the elaborator, and it suffices for structure
+// view, folding, navigation and a layout-only formatter.
+//
+// NOTE: WHITE_SPACE is a real parser token (ParserDefinition.getWhitespaceTokens() is empty, since Lean is
+// whitespace-sensitive and the infoview hover needs whitespace ranges), so rules handle it explicitly.
 
-// here because adding whitespace now, we must change this too for compatible
-definition ::= KEYWORD_COMMAND4 (WHITE_SPACE)* ((IDENTIFIER DOT)*IDENTIFIER)?
-// TODO maybe finer structure for this
-// Fix https://github.com/onriv/lean4ij/issues/106 with STRING
-attributes ::= ATTRIBUTE_START (WHITE_SPACE)* (IDENTIFIER|LEFT_PAREN|RIGHT_PAREN|ASSIGN|WHITE_SPACE|STRING)* RIGHT_BRACKET|
-    ATTRIBUTE (WHITE_SPACE)+ LEFT_BRACKET (IDENTIFIER|LEFT_PAREN|RIGHT_PAREN|ASSIGN|WHITE_SPACE|STRING)* RIGHT_BRACKET
+leanFile ::= item*
+
+private item ::= command | anyToken
+
+// A top-level command: a head (optional doc/attributes/modifiers + keyword + optional name) then its body.
+command ::= commandHead commandBody { pin=1 }
+
+private commandHead ::= (commandPrefix WHITE_SPACE*)* commandKeyword
+
+// What may precede a command keyword: a doc comment, an attribute block, or a visibility/compute modifier.
+private commandPrefix ::= DOC_COMMENT | attributes | KEYWORD_COMMAND_PREFIX
+
+// def/theorem/structure/... carry a declared name; import/open/namespace/#check/notation/... do not (here).
+private commandKeyword ::= declKeyword | plainKeyword
+private declKeyword ::= KEYWORD_COMMAND4 WHITE_SPACE* definition?
+private plainKeyword ::= KEYWORD_COMMAND1 | KEYWORD_COMMAND2 | KEYWORD_COMMAND3 | KEYWORD_COMMAND5
+
+// The declared name. Its head is a kind-specific token emitted by the lexer (TYPE_NAME / DEF_NAME /
+// THEOREM_NAME, colored by Lean4SyntaxHighlighter), optionally followed by dotted segments. Wrapped as
+// Lean4Definition; used by the structure view, folding and formatter.
+definition ::= declName (DOT (IDENTIFIER | TYPE_NAME))*
+private declName ::= TYPE_NAME | DEF_NAME | THEOREM_NAME
+
+// @[...] or `attribute [...]`. Wrapped as Lean4Attributes; used by Lean4Annotator. Inner content is opaque
+// up to the closing bracket.
+attributes ::= ATTRIBUTE_START attrInner* RIGHT_BRACKET
+             | ATTRIBUTE WHITE_SPACE+ LEFT_BRACKET attrInner* RIGHT_BRACKET
+private attrInner ::= !RIGHT_BRACKET anyToken
+
+// The opaque body: every token up to (but not including) the start of the next command.
+private commandBody ::= bodyItem*
+private bodyItem ::= !commandStart anyToken
+
+// A new command starts at a doc comment, an attribute, a modifier, or a command keyword (NOT COMMAND6,
+// which are term/tactic keywords that live INSIDE bodies: by/have/match/fun/in/with).
+private commandStart ::= DOC_COMMENT | ATTRIBUTE_START | ATTRIBUTE | KEYWORD_COMMAND_PREFIX
+                       | KEYWORD_COMMAND1 | KEYWORD_COMMAND2 | KEYWORD_COMMAND3 | KEYWORD_COMMAND4 | KEYWORD_COMMAND5
+
+// Any single token; used for opaque body/attribute content and stray top-level tokens between commands.
+// Must enumerate every token the lexer emits so Grammar-Kit declares them all in the generated TokenType
+// (the lexer references lean4ij.language.psi.TokenType.*).
+private anyToken ::=
+      IDENTIFIER | TYPE_NAME | DEF_NAME | THEOREM_NAME | WHITE_SPACE | LINE_COMMENT | BLOCK_COMMENT | DOC_COMMENT | STRING
+    | KEYWORD_COMMAND1 | KEYWORD_COMMAND2 | KEYWORD_COMMAND3 | KEYWORD_COMMAND4 | KEYWORD_COMMAND5 | KEYWORD_COMMAND6
+    | KEYWORD_COMMAND_PREFIX | KEYWORD_MODIFIER | KEYWORD_SORRY | DEFAULT_TYPE
+    | LEFT_PAREN | RIGHT_PAREN | LEFT_BRACKET | RIGHT_BRACKET | LEFT_BRACE | RIGHT_BRACE
+    | LEFT_UNI_BRACKET | RIGHT_UNI_BRACKET | DOT | COLON | ASSIGN | EQUAL | COMMA | AT | STAR | FOR_ALL | VERTICAL_BAR
+    | ATTRIBUTE_START | ATTRIBUTE | PLACEHOLDER | TEMPLATE_TRIGGER | NUMBER | NEGATIVE_NUMBER
+    | MISC_COMPARISON_SYM | MISC_PLUS_SYM | MISC_MULTIPLY_SYM | MISC_EXPONENT_SYM | MISC_ARROW_SYM | OTHER

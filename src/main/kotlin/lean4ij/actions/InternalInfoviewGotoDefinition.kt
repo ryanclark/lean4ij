@@ -4,6 +4,8 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.thisLogger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import lean4ij.infoview.LeanInfoviewService
 import lean4ij.lsp.data.GetGoToLocationParams
@@ -25,16 +27,22 @@ class InternalInfoviewGotoDefinition : AnAction() {
         val context = toolWindowService.contextInfo?:return
         val leanFile = leanProjectService.file(context.second)
         leanProjectService.scope.launch {
-            val textDocument = TextDocumentIdentifier(LspUtil.quote(context.second.url))
-            val params = GetGoToLocationParams(
-                leanFile.getSession(),
-                textDocument,
-                context.third,
-                GetGoToLocationParamsParams("definition", context.first)
-            )
-            val targets = leanFile.getGotoLocation(params)
-            if (targets != null) {
-                project.service<LeanProjectService>().getGoToLocation(targets)
+            try {
+                val textDocument = TextDocumentIdentifier(LspUtil.quote(context.second.url))
+                val params = GetGoToLocationParams(
+                    leanFile.getSession(),
+                    textDocument,
+                    context.third,
+                    GetGoToLocationParamsParams("definition", context.first)
+                )
+                val targets = leanFile.getGotoLocation(params)
+                if (targets != null) {
+                    project.service<LeanProjectService>().getGoToLocation(targets)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                thisLogger().debug("Skip go-to-definition (language server unavailable/restarting): ${e.message}")
             }
         }
     }

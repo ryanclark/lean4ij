@@ -7,6 +7,16 @@ object Constants {
     const val LEAN_LANGUAGE_SERVER_ID = "lean"
     const val LEAN_LANGUAGE_ID = "lean"
 
+    /**
+     * Server id for a non-root Lake package, e.g. "lean::e" for `<root>/e`. The root package keeps the
+     * static [LEAN_LANGUAGE_SERVER_ID] from plugin.xml.
+     */
+    fun leanServerId(relPackagePath: String): String = "$LEAN_LANGUAGE_SERVER_ID::$relPackagePath"
+
+    /** Whether [id] is one of lean4ij's servers (the root "lean" or a per-package "lean::..."). */
+    fun isLeanServerId(id: String): Boolean =
+        id == LEAN_LANGUAGE_SERVER_ID || id.startsWith("$LEAN_LANGUAGE_SERVER_ID::")
+
     const val LEAN_PLAIN_GOAL = "\$/lean/plainGoal"
     const val LEAN_PLAIN_TERM_GOAL = "\$/lean/plainTermGoal"
     const val LEAN_RPC_CONNECT = "\$/lean/rpc/connect"

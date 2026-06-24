@@ -431,3 +431,6 @@ with_unfolding_all Lean.Parser.Tactic.withUnfoldingAll
 witt_truncateFun_tac witt_truncateFun_tac
 wlog Mathlib.Tactic.wlog
 zify Mathlib.Tactic.Zify.zify
+fun_cases fun_cases
+fun_induction fun_induction
+grind grind

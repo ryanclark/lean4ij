@@ -7,6 +7,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.redhat.devtools.lsp4ij.lifecycle.LanguageServerLifecycleManager
 import com.redhat.devtools.lsp4ij.server.ProcessStreamConnectionProvider
+import lean4ij.project.LeanProjectService
 import lean4ij.project.ToolchainService
 import lean4ij.setting.Lean4Settings
 import lean4ij.util.OsUtil
@@ -20,7 +21,16 @@ import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.isRegularFile
 
-internal class LeanLanguageServerProvider(val project: Project) : ProcessStreamConnectionProvider() {
+/**
+ * [packageRoot] is the Lake package directory this `lake serve` is rooted at. It defaults to the project
+ * base path (the root package, started by the static `lean` server definition). Per-package server
+ * definitions ([LeanPackageServerDefinition]) pass the nested package's directory so each Lake package in
+ * a monorepo gets its own server rooted at its own `lakefile`/`lean-toolchain`.
+ */
+internal class LeanLanguageServerProvider(
+    val project: Project,
+    private val packageRoot: Path = Path.of(project.basePath ?: "."),
+) : ProcessStreamConnectionProvider() {
 
     private val lean4Settings = service<Lean4Settings>()
 
@@ -30,6 +40,12 @@ internal class LeanLanguageServerProvider(val project: Project) : ProcessStreamC
     }
 
     private fun addLanguageServerLifecycleListener() {
+        // This provider is recreated by lsp4ij on every server (re)start. Register the lifecycle
+        // listener only once per project; otherwise each restart leaks another proxy that re-handles
+        // every status event (see LeanProjectService.lifecycleListenerRegistered).
+        if (!project.service<LeanProjectService>().lifecycleListenerRegistered.compareAndSet(false, true)) {
+            return
+        }
         val instance = LanguageServerLifecycleManager.getInstance(project)
 
         // 首先尝试直接查找方法
@@ -54,7 +70,10 @@ internal class LeanLanguageServerProvider(val project: Project) : ProcessStreamC
      */
     private fun setServerCommand() {
 
-        val toolchainFile = ToolchainService.expectedToolchainPath(project);
+        // Resolve the toolchain from THIS package's lean-toolchain (a nested Lake package may pin its
+        // own toolchain). For the root package this is <basePath>/lean-toolchain, i.e. identical to the
+        // previous ToolchainService.expectedToolchainPath(project).
+        val toolchainFile = packageRoot.resolve("lean-toolchain")
         if (!toolchainFile.exists()) {
             // more than likely this means that
             // the user is using an intellij ide
@@ -114,8 +133,10 @@ internal class LeanLanguageServerProvider(val project: Project) : ProcessStreamC
         toolchainService.leanPath = lean
 
         // TODO should check if lake exists?
-        commands = listOf(lake.toString(), "serve", "--", project.basePath)
-        workingDirectory = project.basePath
+        // Root `lake serve` at this package's directory so it serves this package's modules (and resolves
+        // its dependencies, including path-deps on sibling packages).
+        commands = listOf(lake.toString(), "serve", "--", packageRoot.toString())
+        workingDirectory = packageRoot.toString()
     }
 
     /**

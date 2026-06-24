@@ -73,9 +73,11 @@ class BuildWindowService(val project: Project) {
                         }
                     }
                     (s as? BuildEnd)?.let {
-                        val build = builds[s.file]
-                        if (build == null) {
-                            thisLogger().error("no build for ${s.file}")
+                        if (builds[s.file] == null) {
+                            // A build-end without a matching build-start: the server can report this, and the
+                            // builds[s.file]?.let below already no-ops. Not a real error; Logger.error throws in
+                            // internal/dev mode, so log at debug instead.
+                            thisLogger().debug("no build for ${s.file}")
                         }
                         // TODO there still seems build end without build start
                         builds[s.file]?.let {

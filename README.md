@@ -69,8 +69,9 @@ Currently, the following actions are defined, mostly without default shortcut. A
 Since version 0.0.17 there are some settings available:
 
 - General setting is under `Settings/Preferences` > `Leanguages & Frameworks` > `Lean4`. Available settings are:
-    - (TODO) Enable Lsp Completion: Currently not support, waiting lsp4ij's new release. This is for currently
-      discovering that sometimes lsp completion is slow. But it's enable by default.
+    - Enable Lsp Completion: LSP-based completion is supported and enabled by default. It can be toggled
+      under `Language Server Settings`. LSP completion is occasionally slow, so this option lets you turn
+      it off if needed.
 - Enable the native infoview, and timeout for popping the doc
 - Enable the external infoview
 - Extra css for external infoview. The most relevant I found is changing font-size

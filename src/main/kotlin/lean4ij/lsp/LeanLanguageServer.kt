@@ -44,17 +44,22 @@ import lean4ij.lsp.data.TaggedTextAppend
 import lean4ij.lsp.data.TaggedTextTag
 import lean4ij.lsp.data.TaggedTextText
 import lean4ij.util.fromJson
+import org.eclipse.lsp4j.DefinitionParams
 import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
+import org.eclipse.lsp4j.DocumentSymbol
+import org.eclipse.lsp4j.DocumentSymbolParams
+import org.eclipse.lsp4j.SymbolInformation
+import org.eclipse.lsp4j.jsonrpc.messages.Either
 import java.lang.reflect.Type
 import java.util.concurrent.CompletableFuture
 
 /**
- * This class declares the suspend like method for the language server, and handling serialization serialization
- * which making the method type safe, for usage see [lean4ij.project.LeanFile], where handles things like session
- * outdated and is more biz relevant.
- * TODO here we don't impl getWidgets. It's implemented with react and we can no do it with swing anyway...
- *      for the external infoview, it's bridged transparently and doesn't require an explicit declaration
+ * Type-safe suspend wrappers over the language server, with the JSON (de)serialization wiring. For usage
+ * see [lean4ij.project.LeanFile], which handles session-outdated and other business concerns.
+ *
+ * getWidgets is not implemented: it is React-based and has no Swing equivalent. The external infoview
+ * bridges it transparently and needs no explicit declaration here.
  */
 class LeanLanguageServer(val languageServer: InternalLeanLanguageServer) {
 
@@ -98,6 +103,35 @@ class LeanLanguageServer(val languageServer: InternalLeanLanguageServer) {
         return getGotoLocationAsync(params).await()
     }
 
+    /**
+     * Standard LSP `textDocument/documentSymbol`: the symbols (defs/theorems/structures/...) DECLARED in
+     * the file. Used by [lean4ij.project.LeanSymbolColoringService] to color in-file declarations. No Lean
+     * RPC session needed (this is plain LSP, not `$/lean/rpc/call`).
+     */
+    suspend fun documentSymbol(params: DocumentSymbolParams): List<Either<SymbolInformation, DocumentSymbol>>? {
+        return languageServer.documentSymbol(params).await()
+    }
+
+    /** A resolved definition's file URI plus the 0-based line of the declaration's name. */
+    data class DefinitionSite(val uri: String, val line: Int)
+
+    /**
+     * Resolves `textDocument/definition` to the first target's file URI and the line of the declaration's name.
+     * The caller reads that line in the target file to tell a `theorem`/`lemma` from a `def`, since the LSP
+     * definition result carries no symbol kind. Uses the name range (targetSelectionRange) when the server
+     * returns location links.
+     */
+    suspend fun definitionSite(params: DefinitionParams): DefinitionSite? {
+        val result = languageServer.definition(params).await() ?: return null
+        return when {
+            result.isLeft -> result.left?.firstOrNull()?.let { DefinitionSite(it.uri, it.range.start.line) }
+            result.isRight -> result.right?.firstOrNull()?.let {
+                DefinitionSite(it.targetUri, (it.targetSelectionRange ?: it.targetRange).start.line)
+            }
+            else -> null
+        }
+    }
+
 
     fun plainGoalAsync(params: PlainGoalParams): CompletableFuture<PlainGoal?> {
         return languageServer.plainGoal(params)
@@ -133,19 +167,14 @@ class LeanLanguageServer(val languageServer: InternalLeanLanguageServer) {
         }
     }
 
-    /**
-     * TODO weird, where is this params [InteractiveInfoParams] and return result [CodeWithInfos]
-     *      from?   it seems incorrect
-     */
+    /** TODO verify the [InteractiveInfoParams] param and [InfoPopup] result types; they may be incorrect. */
     fun infoToInteractiveAsync(params: InteractiveInfoParams): CompletableFuture<InfoPopup> {
         return languageServer.rpcCall(params).thenApply {
             gson.fromJson(it)
         }
     }
 
-    /**
-     * the rpc call for showing trace in infoview
-     */
+    /** RPC call for showing a trace in the infoview. */
     fun lazyTraceChildrenToInteractiveAsync(params: LazyTraceChildrenToInteractiveParams): CompletableFuture<List<TaggedText<MsgEmbed>>?> {
         return languageServer.rpcCall(params).thenApply {
             gson.fromJson(it)
@@ -172,15 +201,13 @@ class LeanLanguageServer(val languageServer: InternalLeanLanguageServer) {
     }
 
     companion object {
-        /**
-         * TODO here it can be some refactor to DRY
-         */
+        /** TODO the deserializers below are repetitive and could be DRYed up. */
         val gson: Gson = GsonBuilder()
             .registerTaggedText<SubexprInfo>()
             .registerTaggedText<MsgEmbed>()
             .registerTypeAdapter(MsgEmbed::class.java, object : JsonDeserializer<MsgEmbed> {
                 override fun deserialize(p0: JsonElement, p1: Type, p2: JsonDeserializationContext): MsgEmbed {
-                    // TODO these and all around deserializer is very similar, maybe refactor them
+                    // TODO this deserializer is very similar to the others; consider refactoring them.
                     if (p0.isJsonObject && p0.asJsonObject.has("expr")) {
                         @Suppress("NAME_SHADOWING")
                         val p1 = p0.asJsonObject.getAsJsonObject("expr")
@@ -224,7 +251,7 @@ class LeanLanguageServer(val languageServer: InternalLeanLanguageServer) {
                     throw IllegalStateException("Unsupported RPC method: $method")
                 }
             })
-            // TODO here it's quit idle too
+            // TODO this adapter is also repetitive.
             .registerTypeAdapter(
                 StrictOrLazy::class.java,
                 object : JsonDeserializer<StrictOrLazy<List<TaggedText<MsgEmbed>>, ContextInfo>> {
@@ -254,12 +281,8 @@ class LeanLanguageServer(val languageServer: InternalLeanLanguageServer) {
 }
 
 /**
- * this is hinted by copilot
- * TODO does it already exists in some library? I think it must be
- * TODO add the log for it with the old scala log also for similar purpose
- *      and in fact the only crucial part it
- *      val type = object : TypeToken<TaggedText<T>>() {}.type
- *      all other is already support in Gson (kind of forgetting this)
+ * Registers the Gson type adapters for [TaggedText] and its list form. The crucial part is the
+ * `TypeToken<TaggedText<T>>` token; Gson handles the rest.
  */
 inline fun <reified T> GsonBuilder.registerTaggedText(): GsonBuilder where T : InfoViewContent {
     val type = object : TypeToken<TaggedText<T>>() {}.type
@@ -289,7 +312,7 @@ inline fun <reified T> GsonBuilder.registerTaggedText(): GsonBuilder where T : I
             throw IllegalStateException(p0.toString())
         }
     })
-    // TODO not sure why but it requires for deserializing List<TaggedText<MsgEmbed>>
+    // A separate list adapter is required to deserialize List<TaggedText<MsgEmbed>>.
     val listType = object : TypeToken<List<TaggedText<T>>>() {}.type
     this.registerTypeAdapter(listType, object : JsonDeserializer<List<TaggedText<T>>> {
         override fun deserialize(p0: JsonElement, p1: Type, p2: JsonDeserializationContext): List<TaggedText<T>> {

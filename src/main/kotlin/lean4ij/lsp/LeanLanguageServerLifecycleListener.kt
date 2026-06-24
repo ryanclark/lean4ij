@@ -23,16 +23,27 @@ class LeanLanguageServerLifecycleListener(val project: Project) {
     private val leanProjectService: LeanProjectService = project.service()
 
     fun handleStatusChanged(languageServer: LanguageServerWrapper) {
-        if (languageServer.serverDefinition.id != Constants.LEAN_LANGUAGE_SERVER_ID) {
+        val serverId = languageServer.serverDefinition.id
+        // Accept the root "lean" server AND every per-package "lean::..." server (multi-package monorepos).
+        if (!Constants.isLeanServerId(serverId)) {
             return
         }
-        if (languageServer.serverStatus == ServerStatus.none || languageServer.serverStatus == ServerStatus.stopped) {
-            leanProjectService.resetServer()
+        // Log every transition so unexpected stop/restart churn is visible in idea.log. A burst of
+        // started -> stopping -> started here means lsp4ij is restarting the server, not that the
+        // Lean server itself crashed.
+        thisLogger().info("Lean language server '$serverId' status changed to ${languageServer.serverStatus}")
+        // Reset (and clear the file-progress bar) whenever the server is going away. A *restart*
+        // transitions stopping -> starting -> started and never emits `stopped`, so keying only off
+        // stopped/none left the in-flight progress bar stuck forever after a restart.
+        if (languageServer.serverStatus == ServerStatus.none
+            || languageServer.serverStatus == ServerStatus.stopped
+            || languageServer.serverStatus == ServerStatus.stopping) {
+            leanProjectService.resetServer(serverId)
         }
         // TODO maybe reset initializedServer to null also in here?
         if (languageServer.serverStatus == ServerStatus.started) {
             languageServer.initializedServer.thenAccept {
-                leanProjectService.setInitializedServer(it)
+                leanProjectService.setInitializedServer(serverId, it)
             }
         }
     }
@@ -40,7 +51,8 @@ class LeanLanguageServerLifecycleListener(val project: Project) {
     private val hoverRequests = mutableSetOf<String>()
 
     fun handleLSPMessage(message: Message, consumer: MessageConsumer, languageServer: LanguageServerWrapper) {
-        if (languageServer.serverDefinition.id != Constants.LEAN_LANGUAGE_SERVER_ID) {
+        val serverId = languageServer.serverDefinition.id
+        if (!Constants.isLeanServerId(serverId)) {
             return
         }
         if (message is RequestMessage) {
@@ -50,7 +62,7 @@ class LeanLanguageServerLifecycleListener(val project: Project) {
         }
         if (message is ResponseMessage) {
             if (message.result is InitializeResult) {
-                leanProjectService.setInitializedResult(message.result as InitializeResult)
+                leanProjectService.setInitializedResult(serverId, message.result as InitializeResult)
             }
             if (message.id in hoverRequests) {
                 // get current hover results for showing highlight of current content

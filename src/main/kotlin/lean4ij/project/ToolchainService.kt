@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.intellij.execution.configurations.GeneralCommandLine
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.VirtualFile
 import kotlinx.serialization.json.Json
 import lean4ij.util.fromJson
 import java.net.HttpURLConnection
@@ -135,6 +136,17 @@ class ToolchainService(val project: Project) {
         return !expectedToolchainPath().toFile().isFile
     }
 
+    /** The expected `lean-toolchain` path for [file]'s OWN Lake package (multi-package aware). */
+    fun expectedToolchainPathFor(file: VirtualFile): Path =
+        project.getService(LakePackageService::class.java).packageRootOf(file).resolve(TOOLCHAIN_FILE_NAME)
+
+    /**
+     * True if [file]'s own Lake package has no `lean-toolchain`. Mirrors the per-package serve-command
+     * resolution in [lean4ij.lsp.LeanLanguageServerProvider.setServerCommand], so the open-time error and the
+     * actual server use the same toolchain path (a nested package can pin a different toolchain than the root).
+     */
+    fun toolchainNotFoundFor(file: VirtualFile): Boolean = !expectedToolchainPathFor(file).toFile().isFile
+
     /**
      * Run a lean file using lake env, for lean it's ran as the command
      * `lean --run <file>`,
@@ -147,8 +159,12 @@ class ToolchainService(val project: Project) {
             command.addAll(arguments.split(ARGUMENT_SEPARATOR))
         }
         return GeneralCommandLine(*command.toTypedArray()).apply {
-            // TODO it seems that running a file with lake requires the project root as the work directory
-            this.workDirectory = Path.of(project.basePath!!).toFile()
+            // Run lake from the file's own Lake package root, not the project root. In a multi-package
+            // monorepo, a nested-package file (e.g. e/proofs/ttyterminal/Main.lean) must resolve its
+            // package's modules (e.g. TtyTilingFfi), which are only on `lake env lean`'s search path when
+            // lake runs from that package's directory. For a single-package project this is the base path,
+            // so behavior is unchanged.
+            this.workDirectory = project.getService(LakePackageService::class.java).packageRootOf(filePath).toFile()
         }
     }
 

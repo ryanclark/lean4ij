@@ -1,0 +1,52 @@
+<?xml version='1.0'?>
+<!--
+  Default colors for lean4ij's custom symbol keys in the bundled DARK (Darcula) scheme.
+
+  Lean's symbol keys fall back to the standard role keys (CLASS_NAME / CLASS_REFERENCE / FUNCTION_CALL /
+  OPERATION_SIGN / KEYWORD / CONSTANT / ...), so types, operators, tactics, defs, theorems and keywords all
+  inherit the active dark theme's color for the equivalent construct in other languages — no override needed
+  (e.g. on Material Darker: types green, structures yellow, operators cyan, tactics/defs blue, theorems orange,
+  keywords purple). The one exception is data constructors: their standard fallback (STATIC_FIELD) is left at
+  the default foreground by many dark themes, so we set the theme's enum-member purple. Everything is
+  overridable in Settings | Editor | Color Scheme | Lean (LeanColorSettingsPage).
+-->
+<list>
+  <!-- Data constructors / enum members (none, some, ground, inductive ctors). A warm coral — pops against the
+       cool blues/greens/teals and is clearly separate from the purple keywords (the former dim enum-member
+       violet 9373a5 read muddy). Overrides the STATIC_FIELD fallback. -->
+  <option name="LEAN_CONSTRUCTOR">
+    <value>
+      <option name="FOREGROUND" value="f07178"/>
+    </value>
+  </option>
+  <!-- Theorems/lemmas: a distinct color — NOT def-blue, NOT imported-fn-teal, NOT the parameter orange, NOT the
+       type green/gold. A soft rose: stands out as a named proven fact without the "error" connotation a true red
+       (the former ff5370) carries in an editor. Overrides the CONSTANT fallback. -->
+  <option name="LEAN_THEOREM">
+    <value>
+      <option name="FOREGROUND" value="f48fb1"/>
+    </value>
+  </option>
+  <!-- Built-in / stdlib types (Option, List, Nat, Bool, ...) — a gold/yellow that is distinct from project
+       types (green LEAN_TYPE), so an imported stdlib type doesn't read like a domain type. Matches the Material
+       Darker class-name gold; overrides the CLASS_NAME fallback so it's visible on plain Darcula too. -->
+  <option name="LEAN_BUILTIN_TYPE">
+    <value>
+      <option name="FOREGROUND" value="ffcb6b"/>
+    </value>
+  </option>
+  <!-- Imported / stdlib functions (le, bmax, List.foldl, ...) — a teal, distinct from the blue of your own
+       in-file defs and from the red of theorems. Overrides the FUNCTION_CALL fallback. -->
+  <option name="LEAN_IMPORTED_FUNCTION">
+    <value>
+      <option name="FOREGROUND" value="80cbc4"/>
+    </value>
+  </option>
+  <!-- `inline code` inside comments — a brighter blue-grey so code refs stand out from the dim italic comment
+       prose. The IDE's DOC_COMMENT_MARKUP fallback is unset in Material Darker (rendered flat), so set explicitly. -->
+  <option name="LEAN_COMMENT_CODE">
+    <value>
+      <option name="FOREGROUND" value="b0bec5"/>
+    </value>
+  </option>
+</list>

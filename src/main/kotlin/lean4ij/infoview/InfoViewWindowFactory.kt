@@ -41,9 +41,15 @@ class InfoViewWindowFactory : ToolWindowFactory {
          * The id is from plugin.xml
          */
         fun getLeanInfoview(project: Project): LeanInfoViewWindow? {
+            // Use contentManagerIfCreated rather than contentManager: the latter routes through
+            // ToolWindowImpl.createContentIfNeeded(), which calls ThreadingAssertions.softAssertEventDispatchThread()
+            // and force-creates the tool window content. getLeanInfoview is called from background
+            // coroutines (e.g. updateInteractiveGoal off Dispatchers.Default), so force-creating there
+            // raised "Access is allowed from Event Dispatch Thread (EDT) only". contentManagerIfCreated
+            // returns null when the content has not been created yet, which the null handling below already expects.
             val contents = ToolWindowManager.getInstance(project)
                 .getToolWindow("LeanInfoViewWindow")
-                ?.contentManager?.contents
+                ?.contentManagerIfCreated?.contents
             // If the project just startup and teh tool window never opened before
             // it may be null
             if (contents == null) {

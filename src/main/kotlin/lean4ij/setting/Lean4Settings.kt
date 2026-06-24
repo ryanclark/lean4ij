@@ -25,6 +25,7 @@ class Lean4Settings : PersistentStateComponent<Lean4Settings> {
     var enableHeuristicAttributes = true
     var enableHeuristicDefinition = true
     var enableHoverHighlight = true
+    var enableConstReferenceHighlighting = true
 
     var addSpaceAfterLiveTemplates = true
     var autoCompletePairLiveTemplates = true
@@ -89,6 +90,7 @@ fun Lean4SettingsView.createComponent(settings: Lean4Settings) = panel {
     group("General Settings") {
         boolean("Enable the vertical file progress bar on the left of editor", settings::enableFileProgressBar)
         boolean("Enable hover highlight for current term", settings::enableHoverHighlight)
+        boolean("Color references to defs/theorems/functions, incl. imports (LSP-resolved)", settings::enableConstReferenceHighlighting)
         boolean("Enable heuristic definition highlighting", settings::enableHeuristicDefinition)
         boolean("Enable heuristic tactic highlighting", settings::enableHeuristicTactic)
         boolean("Enable heuristic field highlighting", settings::enableHeuristicField)

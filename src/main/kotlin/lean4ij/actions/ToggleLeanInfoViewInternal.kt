@@ -5,7 +5,7 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.editor.Editor
-import lean4ij.infoview.InfoViewWindowFactory
+import com.intellij.openapi.wm.ToolWindowManager
 import lean4ij.util.LeanUtil
 
 class ToggleLeanInfoViewInternal : AnAction() {
@@ -16,8 +16,11 @@ class ToggleLeanInfoViewInternal : AnAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
-        val leanInfoview = InfoViewWindowFactory.getLeanInfoview(project)?:return
-        val toolWindow = leanInfoview.toolWindow
+        // Toggle the tool window directly instead of via InfoViewWindowFactory.getLeanInfoview:
+        // the latter no longer force-creates the tool window content, so it would return null
+        // (and this action would no-op) until the infoview has been opened once. show() creates
+        // the content on the EDT when needed.
+        val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("LeanInfoViewWindow") ?: return
         if (toolWindow.isVisible) {
             toolWindow.hide()
         } else {

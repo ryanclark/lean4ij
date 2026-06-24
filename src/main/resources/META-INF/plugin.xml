@@ -7,6 +7,10 @@
     <!-- we must depend on com.intellij.modules.platform for compatibility with Pycharm/Clion/RustRover etc -->
     <depends>com.intellij.modules.platform</depends>
     <depends>com.redhat.devtools.lsp4ij</depends>
+    <!-- Optional: ships the Lean TextMate grammar only so lsp4ij can highlight hover code fences (lsp4ij
+         highlights fences via TextMate only). Does not affect editing: the native <fileType> keeps `.lean` on
+         the JFlex/Grammar-Kit highlighter. Without TextMate the plugin still loads; hovers just show plain code. -->
+    <depends optional="true" config-file="lean4ij-textmate.xml">org.jetbrains.plugins.textmate</depends>
     <!-- For the creating new project feature the java dependence is necessary -->
 
     <resource-bundle>messages.MyBundle</resource-bundle>
@@ -35,49 +39,64 @@
 
 
 
-        <!-- // from https://github.com/JetBrains/godot-support/blob/master/rider/src/main/resources/META-INF/plugin.xml-->
-        <!-- https://github.com/mallowigi/permify-jetbrains/blob/de27f901228919ce7eab0c37d8045443283fc4eb/src/main/resources/META-INF/plugin.xml#L26-->
-        <!-- <textmate.bundleProvider implementation="lean4ij.language.TextMateBundleProvider"/> -->
         <colorSettingsPage implementation="lean4ij.infoview.LeanInfoviewColorSettingPage"/>
+        <colorSettingsPage implementation="lean4ij.language.LeanColorSettingsPage"/>
 
-        <!-- lsp4ij says:-->
-        <!-- Indeed, when you manually define a File type for some file name patterns, you loose the TextMate syntax coloration.-->
-        <!-- see: https://github.com/redhat-developer/lsp4ij/blob/main/docs/DeveloperGuide.md#declare-file-mappings-->
-        <!-- indeed, this cannot use-->
-        <fileType
-                name="lean4"
-                implementationClass="lean4ij.language.Lean4FileType"
-                fieldName="INSTANCE"
-                language="lean4"
-                extensions="lean"/>
+        <!-- Default colors for the custom Lean symbol keys: the type family (LEAN_STRUCTURE/INDUCTIVE/CLASS/
+             TYPE) gets a VS Code-style teal default in the bundled light/dark schemes; otherwise it falls back
+             to CLASS_NAME/CLASS_REFERENCE, which Darcula leaves uncolored. Overridable in
+             Settings | Editor | Color Scheme | Lean. -->
+        <additionalTextAttributes scheme="Default" file="colorSchemes/LeanDefault.xml"/>
+        <additionalTextAttributes scheme="Darcula" file="colorSchemes/LeanDarcula.xml"/>
 
-        <!-- Lean4ParserDefinition is still problematic -->
+        <!-- Native Lean 4 language: .lean/.lean4 open as a real IntelliJ language backed by a JFlex lexer plus
+             skeleton Grammar-Kit parser (PSI). The native file type owns editing (not TextMate): lexical
+             coloring comes from Lean4SyntaxHighlighter, comments/brackets from the native commenter and brace
+             matcher, and the file gets real PSI (word selection, brace matching, occurrence highlighting, no
+             TextMate-plugin dependency). lsp4ij still layers LSP semantic tokens on top; the resolution
+             annotator colors types/defs/theorems. The file icon comes from Lean4FileType. -->
+        <fileType name="lean4"
+                  implementationClass="lean4ij.language.Lean4FileType"
+                  fieldName="INSTANCE"
+                  language="lean4"
+                  extensions="lean;lean4"/>
         <lang.parserDefinition language="lean4" implementationClass="lean4ij.language.Lean4ParserDefinition"/>
+        <lang.syntaxHighlighterFactory language="lean4" implementationClass="lean4ij.language.Lean4SyntaxHighlighterFactory"/>
         <lang.commenter language="lean4" implementationClass="lean4ij.language.Lean4Commenter"/>
         <lang.braceMatcher language="lean4" implementationClass="lean4ij.language.Lean4PairedBraceMatcher"/>
 
-        <!--
-        TODO
-            must it have something like
-            <typedHandler implementation="com.intellij.codeInsight.editorActions.CompletionAutoPopupHandler" id="completionAutoPopup"
-                          order="first"/>
-            ?
-        -->
-        <!-- both these two not working... -->
-        <!-- <completion.contributor language="lean4" implementationClass="org.jetbrains.plugins.textmate.editor.TextMateCompletionContributor"/> -->
-        <completion.contributor language="lean4" implementationClass="com.intellij.util.textCompletion.TextCompletionContributor"
-                                order="first, before commitCompletion"/>
-        <!-- it works, but not ready to add yet(and lsp completion too slow kind of blocking it...) -->
-        <!-- <completion.contributor language="lean4" implementationClass="lean4ij.language.Lean4ManualCompletionContributor" -->
-        <!--                         order="first, before commitCompletion"/> -->
+        <!-- Fold multi-line declaration bodies + block/doc comments (skeleton PSI). -->
+        <lang.foldingBuilder language="lean4" implementationClass="lean4ij.language.Lean4FoldingBuilder"/>
+        <!-- Structure tool window: top-level named declarations (def/theorem/structure/...). -->
+        <lang.psiStructureViewFactory language="lean4" implementationClass="lean4ij.language.Lean4StructureViewFactory"/>
 
-        <lang.syntaxHighlighterFactory
-                language="lean4"
-                implementationClass="lean4ij.language.Lean4SyntaxHighlighterFactory"/>
-        <!-- ref: https://plugins.jetbrains.com/docs/intellij/syntax-highlighting-and-error-highlighting.html -->
-        <!-- this seems to be the third level of highlighting -->
-        <!-- we missed the second level -->
+        <!-- Conservative Reformat Code: a no-op block model registers Lean for formatting, and the post
+             processor sorts imports + collapses blank lines + trims trailing whitespace (bodies untouched). -->
+        <lang.formatter language="lean4" implementationClass="lean4ij.language.Lean4FormattingModelBuilder"/>
+        <postFormatProcessor implementation="lean4ij.language.Lean4ImportSortPostFormatProcessor"/>
+
+        <!-- Smart Enter indentation: adds one level after a block-opener (:= / by / where / do / => / ...).
+             The no-op formatter can't supply block indentation, so this delegate handles it (guards on file
+             type since enterHandlerDelegate is application-wide). Decision logic lives in Lean4Indent. -->
+        <enterHandlerDelegate implementation="lean4ij.language.Lean4EnterHandler"/>
+
+        <!-- Auto-dedent: a line-leading closing bracket ) ] } ⟩ snaps to its matching opener's column. -->
+        <typedHandler implementation="lean4ij.language.Lean4TypedHandler"/>
+
+        <!-- Heuristic field/tactic/attribute coloring from the native PSI (each branch settings-gated by
+             enableHeuristic*; complements the resolution annotator below). -->
         <annotator language="lean4" implementationClass="lean4ij.language.Lean4Annotator"/>
+
+        <!-- Resolution-backed coloring of real def/theorem/function/type references (incl. imports): names come
+             from LeanSymbolColoringService (documentSymbol + textDocument/definition), painted by this annotator
+             and guarded by isLeanFile. -->
+        <annotator language="lean4" implementationClass="lean4ij.language.LeanConstReferenceAnnotator"/>
+
+        <!-- Turn off the platform spell-checker for Lean files (native PSI would otherwise flag every identifier
+             token as a typo); scoped to Lean files via isMyContext, so other languages keep normal spell-check. -->
+        <spellchecker.support language="lean4" implementationClass="lean4ij.language.LeanSpellcheckingStrategy"/>
+
+        <!-- Completion comes from lsp4ij (LeanLSPCompletionFeature) over the languageMapping below. -->
 
         <!-- module -->
         <moduleBuilder builderClass="lean4ij.module.Lean4ModuleBuilder" id="LEAN4_MODULE_BUILDER" />
@@ -101,38 +120,11 @@
                            displayType="BALLOON"
                            key="notification.group.name"/>
 
-        <!-- For the following declarativeInlayProvider, currently the language is TEXT, it should change to lean4 -->
-        <!-- after we finish a simple parser (maybe just tokens/lexer) for lean4 -->
-        <codeInsight.declarativeInlayProvider
-                language="lean4"
-                implementationClass="lean4ij.language.OmitTypeInlayHintsProvider"
-                isEnabledByDefault="true"
-                group="OTHER_GROUP"
-                providerId="lean.def.omit.type"
-                bundle="messages.MyBundle"
-                nameKey="settings.lean.def.omit.type.name"
-                descriptionKey="settings.lean.def.omit.type.name"
-        />
-        <codeInsight.declarativeInlayProvider
-                language="lean4"
-                implementationClass="lean4ij.language.GoalInlayHintsProvider"
-                isEnabledByDefault="true"
-                group="OTHER_GROUP"
-                providerId="lean.goal.hint.value"
-                bundle="messages.MyBundle"
-                nameKey="settings.lean.goal.hints.value.name"
-                descriptionKey="settings.lean.goal.hints.value.name"
-        />
-        <codeInsight.declarativeInlayProvider
-                language="lean4"
-                implementationClass="lean4ij.language.PlaceHolderInlayHintsProvider"
-                isEnabledByDefault="false"
-                group="OTHER_GROUP"
-                providerId="lean.placeholder"
-                bundle="messages.MyBundle"
-                nameKey="settings.lean.placeholder.value.name"
-                descriptionKey="settings.lean.placeholder.value.name"
-        />
+        <!-- Goal / omit-type / placeholder inlay hints, registered for the native lean4 language. The
+             collectors guard on LeanUtil.isLeanFile. -->
+        <codeInsight.declarativeInlayProvider language="lean4" implementationClass="lean4ij.language.OmitTypeInlayHintsProvider" isEnabledByDefault="false" group="OTHER_GROUP" providerId="lean.def.omit.type" bundle="messages.MyBundle" nameKey="settings.lean.def.omit.type.name" descriptionKey="settings.lean.def.omit.type.name"/>
+        <codeInsight.declarativeInlayProvider language="lean4" implementationClass="lean4ij.language.GoalInlayHintsProvider" isEnabledByDefault="true" group="OTHER_GROUP" providerId="lean.goal.hint.value" bundle="messages.MyBundle" nameKey="settings.lean.goal.hints.value.name" descriptionKey="settings.lean.goal.hints.value.name"/>
+        <codeInsight.declarativeInlayProvider language="lean4" implementationClass="lean4ij.language.PlaceHolderInlayHintsProvider" isEnabledByDefault="false" group="OTHER_GROUP" providerId="lean.placeholder" bundle="messages.MyBundle" nameKey="settings.lean.placeholder.value.name" descriptionKey="settings.lean.placeholder.value.name"/>
         <applicationService serviceImplementation="lean4ij.setting.Lean4Settings"/>
         <!-- <lang.foldingBuilder language="textmate" implementationClass="lean4ij.language.PlaceholderFolding"/> -->
         <applicationConfigurable groupId="language" displayName="Lean4" id="preferences.language.Lean4" instance="lean4ij.setting.Lean4Configurable"/>
@@ -149,8 +141,9 @@
         <configurationType implementation="lean4ij.run.LakeRunConfigurationType"/>
         <configurationType implementation="lean4ij.run.ElanRunConfigurationType"/>
 
-        <runLineMarkerContributor language="lean4"
-                                  implementationClass="lean4ij.run.MainRunLineMarkerContributor"/>
+        <!-- The "Run" gutter icon for `def main` is installed per-editor by lean4ij.run.MainRunGutter
+             (from LeanFileOpenedListener), because the skeleton Grammar-Kit parser does not produce a
+             `def main` identifier PSI node for a RunLineMarkerContributor to anchor to. -->
         <programRunner implementation="lean4ij.run.MainRunner"/>
         <runConfigurationProducer implementation="lean4ij.run.MainRunConfigurationProducer"/>
 
@@ -162,10 +155,7 @@
             <description><![CDATA[programming language and theorem prover]]> </description>
         </server>
 
-        <!-- <fileNamePatternMapping patterns="*.lean4;*.lean" -->
-        <!--                         serverId="lean" -->
-        <!--                         languageId="lean"/> -->
-
+        <!-- .lean/.lean4 are the native lean4 language again, so map the Lean server by IntelliJ language. -->
         <languageMapping language="lean4"
                          serverId="lean"
                          languageId="lean"/>

@@ -95,7 +95,7 @@ class TaggedTextTag<T>(val f0: T, val f1: TaggedText<T>) : TaggedText<T>() where
     }
 }
 
-class TaggedTextAppend<T>(private val append: List<TaggedText<T>>) : TaggedText<T>() where T : InfoViewContent {
+class TaggedTextAppend<T>(val append: List<TaggedText<T>>) : TaggedText<T>() where T : InfoViewContent {
 
     override fun toInfoObjectModel(): InfoObjectModel = info {
         for (c in append) {

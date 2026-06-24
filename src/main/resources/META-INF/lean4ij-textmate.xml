@@ -1,0 +1,16 @@
+<idea-plugin>
+    <!--
+      Loaded only when org.jetbrains.plugins.textmate is present (optional depends in plugin.xml).
+
+      Its sole purpose is to make the Lean TextMate grammar available to lsp4ij's hover rendering: lsp4ij
+      highlights markdown code fences (```lean ...```) exclusively via TextMate (its supported-language set is
+      hardcoded to PlainText plus TextMate), so without a Lean grammar the hover signature shows as plain text.
+
+      This does not change how `.lean` files are edited: lean4ij registers a native <fileType ... extensions="lean">
+      which FileTypeManager prefers over any TextMate grammar association, so the editor stays on the native
+      JFlex/Grammar-Kit highlighter. The grammar here is used only for the hover code-fence lookup.
+    -->
+    <extensions defaultExtensionPointName="com.intellij">
+        <textmate.bundleProvider implementation="lean4ij.language.LeanTextMateBundleProvider"/>
+    </extensions>
+</idea-plugin>

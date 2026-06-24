@@ -1,26 +1,25 @@
 {
   "name": "lean4",
   "version": "1.0.0",
-  "description": "lean4",
+  "description": "Lean 4 TextMate grammar, vendored from leanprover/vscode-lean4 (Apache-2.0)",
   "license": "apache2",
   "contributes": {
     "languages": [
       {
         "id": "lean4",
-        "extensions": [
-          ".lean"
-        ]
+        "aliases": ["Lean 4", "lean4", "lean"],
+        "extensions": [".lean", ".lean4"],
+        "configuration": "./language-configuration.json"
       }
     ],
     "grammars": [
       {
         "language": "lean4",
-        "scopeName": "source",
+        "scopeName": "source.lean4",
         "path": "./lean4.json"
       },
       {
-        "language": "lean4-markdown",
-        "scopeName": "source",
+        "scopeName": "source.lean4.markdown",
         "path": "./lean4-markdown.json"
       }
     ]

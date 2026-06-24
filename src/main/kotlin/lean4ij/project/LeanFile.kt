@@ -30,6 +30,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import lean4ij.setting.Lean4Settings
 import lean4ij.infoview.InfoViewWindowFactory
 import lean4ij.infoview.MiniInfoviewService
@@ -71,6 +72,14 @@ import kotlin.math.min
 
 class LeanFile(private val leanProjectService: LeanProjectService, private val file: String) {
 
+    companion object {
+        // If no $/lean/fileProgress update arrives within this window while a file is "processing", treat it as
+        // finished so the background progress task can't hang on a missed/never-sent completion. This only needs
+        // to outlast the gap between progress events, not the whole elaboration, but a large proof or a fresh
+        // Mathlib import can sit on one file for minutes, so keep it generous to avoid a premature "finished".
+        private const val PROGRESS_WATCHDOG_MILLIS = 300_000L
+    }
+
     private val lean4Settings = service<Lean4Settings>()
 
     /**
@@ -80,7 +89,10 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
 
     var virtualFile : VirtualFile? = null
 
-    private val processingInfoChannel = Channel<FileProgressProcessingInfo>()
+    // UNLIMITED + ordered trySend (see updateFileProcessingInfo): the server's fileProgress events MUST be
+    // delivered in the order they arrive, or a `finished` (empty) event can overtake its preceding `processing`
+    // one and the progress loop blocks forever.
+    private val processingInfoChannel = Channel<FileProgressProcessingInfo>(Channel.UNLIMITED)
     private val project = leanProjectService.project
     private val buildWindowService: BuildWindowService = project.service()
     private val scope = leanProjectService.scope
@@ -93,7 +105,16 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
             while (true) {
                 var info = processingInfoChannel.receive()
                 var highlighters = mutableListOf<RangeHighlighter>()
-                highlighters = tryAddLineMarker(info, highlighters)
+                try {
+                    highlighters = tryAddLineMarker(info, highlighters)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Defensive: this call is outside the loop's main try/catch, so any marker failure
+                    // (bad offsets from a stale progress range, etc.) would otherwise leak as an unhandled
+                    // coroutine exception (SEVERE popup).
+                    thisLogger().debug("file progress line marker failed for $file: ${e.message}")
+                }
                 if (info.isFinished()) {
                     continue
                 }
@@ -110,7 +131,12 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
                                 reporter.step(newStep - currentStep)
                                 currentStep = newStep
                             }
-                            info = processingInfoChannel.receive()
+                            // Watchdog: if the server sends no fileProgress update for a while, it likely will
+                            // never send the "finished" (empty) one (server hung on this file / missed
+                            // notification / restart). Treat that as finished so this background task and its
+                            // gutter markers can't stay stuck forever. A later update just starts a fresh cycle.
+                            info = withTimeoutOrNull(PROGRESS_WATCHDOG_MILLIS) { processingInfoChannel.receive() }
+                                ?: FileProgressProcessingInfo(info.textDocument, emptyList())
                             highlighters = tryAddLineMarker(info, highlighters)
                         } while (info.isProcessing())
                     }
@@ -167,7 +193,9 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
                     //      https://github.com/onriv/lean4ij/issues/148
                     //      In a large chance it may be caused by the file is edited currently
                     //      For a temporary solution, just ignore it
-                    if (endLineOffset == -1 || startLineOffset == -1) {
+                    if (endLineOffset == -1 || startLineOffset == -1 || startLineOffset > endLineOffset) {
+                        // start > end happens when the server's (stale) progress range inverts after an edit
+                        // (e.g. start=41, end=0); addRangeHighlighter would throw "Incorrect offsets". Skip it.
                         continue
                     }
                     val rangeHighlighter = markupModel.addRangeHighlighter(
@@ -240,34 +268,61 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
                 thisLogger().info("No virtual file for $file, skip updating infoview")
                 return@launch
             }
-            val session = getSession()
-            val interactiveGoalsParams = InteractiveGoalsParams(session, params, textDocument, position)
-            val interactiveTermGoalParams = InteractiveTermGoalParams(session, params, textDocument, position)
-            // TODO how to determine which diagnostic get?
-            val line = position.line
-            val diagnosticsParams = InteractiveDiagnosticsParams(session, LineRangeParam(LineRange(line, line+1)), textDocument, position)
-            val interactiveGoalsAsync = async { getInteractiveGoals(interactiveGoalsParams) }
-            val interactiveTermGoalAsync = async { getInteractiveTermGoal(interactiveTermGoalParams) }
-            val interactiveDiagnosticsAsync = async { getInteractiveDiagnostics(diagnosticsParams) }
-            // val diagnostics = file.getInteractiveDiagnostics(diagnosticsParams)
-            // Both interactiveGoals and interactiveTermGoal can be null and hence we pass them to
-            // updateInteractiveGoal nullable
-            val interactiveGoals = interactiveGoalsAsync.await()
-            val interactiveTermGoal = interactiveTermGoalAsync.await()
-            val interactiveDiagnostics = interactiveDiagnosticsAsync.await()
+            try {
+                val session = getSession()
+                val interactiveGoalsParams = InteractiveGoalsParams(session, params, textDocument, position)
+                val interactiveTermGoalParams = InteractiveTermGoalParams(session, params, textDocument, position)
+                // TODO how to determine which diagnostic get?
+                val line = position.line
+                val diagnosticsParams = InteractiveDiagnosticsParams(session, LineRangeParam(LineRange(line, line+1)), textDocument, position)
+                val interactiveGoalsAsync = async { getInteractiveGoals(interactiveGoalsParams) }
+                val interactiveTermGoalAsync = async { getInteractiveTermGoal(interactiveTermGoalParams) }
+                val interactiveDiagnosticsAsync = async { getInteractiveDiagnostics(diagnosticsParams) }
+                // val diagnostics = file.getInteractiveDiagnostics(diagnosticsParams)
+                // Both interactiveGoals and interactiveTermGoal can be null and hence we pass them to
+                // updateInteractiveGoal nullable
+                val interactiveGoals = interactiveGoalsAsync.await()
+                val interactiveTermGoal = interactiveTermGoalAsync.await()
+                val interactiveDiagnostics = interactiveDiagnosticsAsync.await()
 
-            // TODO the arguments are passing very deep, need some refactor
-            InfoViewWindowFactory.updateInteractiveGoal(editor, project, virtualFile!!, position, interactiveGoals, interactiveTermGoal, interactiveDiagnostics, allMessage)
+                // TODO the arguments are passing very deep, need some refactor
+                InfoViewWindowFactory.updateInteractiveGoal(editor, project, virtualFile!!, position, interactiveGoals, interactiveTermGoal, interactiveDiagnostics, allMessage)
 
-            project.service<MiniInfoviewService>()
-                .updateCaret(editor, position, interactiveGoals, interactiveTermGoal);
+                project.service<MiniInfoviewService>()
+                    .updateCaret(editor, position, interactiveGoals, interactiveTermGoal);
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // lsp4ij frequently restarts the Lean server while the (huge) monorepo re-indexes, so these
+                // RPC/LSP calls fail transiently (e.g. ResponseErrorException "Cannot process request to
+                // closed file", or a closed stream). Swallow here: otherwise they propagate as unhandled
+                // coroutine exceptions and IntelliJ shows a SEVERE error popup for every caret/edit event.
+                thisLogger().debug("Skip infoview update for $file (language server unavailable/restarting): ${e.message}")
+            }
         }
     }
 
     fun updateFileProcessingInfo(info: FileProgressProcessingInfo) {
-        scope.launch {
-            processingInfoChannel.send(info)
-        }
+        // Enqueue IN ORDER. lsp4ij invokes this notification handler sequentially, so a non-suspending trySend
+        // onto the UNLIMITED channel preserves the server's event order. The previous `scope.launch { send }`
+        // spawned a coroutine per notification that raced on the dispatcher: on the (then unbuffered) channel a
+        // `finished` event could be delivered BEFORE the preceding `processing`, so the loop consumed `finished`
+        // early and then blocked forever waiting for one that never came again: the stuck progress bar.
+        processingInfoChannel.trySend(info)
+    }
+
+    /**
+     * Clears an in-flight file-progress bar by feeding a synthetic "finished" notification.
+     *
+     * The Lean server signals that a file is done elaborating with a `$/lean/fileProgress`
+     * notification whose `processing` list is empty (see [FileProgressProcessingInfo.isFinished]).
+     * The background-progress coroutine in [init] blocks on [processingInfoChannel] waiting for
+     * that terminating event; if the server dies mid-elaboration it never arrives and the progress
+     * bar stays up forever. Calling this on server stop (see [LeanProjectService.resetServer])
+     * unblocks the coroutine so the bar is removed.
+     */
+    fun clearFileProgress() {
+        updateFileProcessingInfo(FileProgressProcessingInfo(TextDocumentIdentifier(file), emptyList()))
     }
 
     private var session : String? = null
@@ -290,7 +345,7 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
             withTimeout(5*1000) {
                 sessionMutex.withLock {
                     if (oldSession == session) {
-                        session = leanProjectService.languageServer.await().rpcConnect(RpcConnectParams(file)).sessionId
+                        session = leanProjectService.languageServerForFile(file).await().rpcConnect(RpcConnectParams(file)).sessionId
                         // keep alive making infoToInteractive behave better, for the reference must have the same session
                         // as the goal result, so keep it alive here...
                         // TODO is here will cause multiple keep alive loop?
@@ -309,38 +364,65 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
         scopeIO.launch {
             while (true) {
                 delay(9 * 1000)
-                leanProjectService.languageServer.await().rpcKeepAlive(RpcKeepAliveParams(file, session!!))
+                try {
+                    leanProjectService.languageServerForFile(file).await().rpcKeepAlive(RpcKeepAliveParams(file, session!!))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Server may be restarting / the session may be stale; don't let this loop crash with
+                    // an unhandled exception (SEVERE IDE error popup). It resumes once the server is back.
+                    thisLogger().debug("rpcKeepAlive failed for $file (language server unavailable/restarting): ${e.message}")
+                }
             }
         }
     }
 
     suspend fun getInteractiveGoals(params: InteractiveGoalsParams): InteractiveGoals? {
         return rpcCallWithRetry(params) {
-            leanProjectService.languageServer.await().getInteractiveGoals(it)
+            leanProjectService.languageServerForFile(file).await().getInteractiveGoals(it)
         }
     }
 
     public suspend fun getInteractiveTermGoal(params : InteractiveTermGoalParams) : InteractiveTermGoal? {
         return rpcCallWithRetry(params) {
-            leanProjectService.languageServer.await().getInteractiveTermGoal(it)
+            leanProjectService.languageServerForFile(file).await().getInteractiveTermGoal(it)
         }
     }
 
     public suspend fun lazyTraceChildrenToInteractive(params: LazyTraceChildrenToInteractiveParams) : List<TaggedText<MsgEmbed>>? {
         return rpcCallWithRetry(params) {
-            leanProjectService.languageServer.await().lazyTraceChildrenToInteractive(it)
+            leanProjectService.languageServerForFile(file).await().lazyTraceChildrenToInteractive(it)
         }
     }
 
     private suspend fun getInteractiveDiagnostics(params : InteractiveDiagnosticsParams) : List<InteractiveDiagnostics>? {
         return rpcCallWithRetry(params) {
-            leanProjectService.languageServer.await().getInteractiveDiagnostics(it)
+            leanProjectService.languageServerForFile(file).await().getInteractiveDiagnostics(it)
         }
+    }
+
+    /**
+     * Fetch Lean interactive (rich) diagnostics for the lines `[startLine, endLine)` of this file, reusing the
+     * file's RPC session + stale-session retry. The returned [InteractiveDiagnostics] carry the prose/code
+     * structure that lets us render syntax-highlighted diagnostic tooltips (see
+     * [lean4ij.lsp.LeanDiagnosticTooltipService]). `endLine` is exclusive (e.g. pass the document line count
+     * for the whole file), matching [getAllMessages]' `LineRange(0, maxLine + 1)`.
+     */
+    suspend fun getInteractiveDiagnosticsForLineRange(startLine: Int, endLine: Int): List<InteractiveDiagnostics>? {
+        val session = getSession()
+        val textDocument = TextDocumentIdentifier(LspUtil.quote(file))
+        val params = InteractiveDiagnosticsParams(
+            session,
+            LineRangeParam(LineRange(startLine, endLine)),
+            textDocument,
+            Position(0, 0)
+        )
+        return getInteractiveDiagnostics(params)
     }
 
     suspend fun getGotoLocation(params: GetGoToLocationParams) : List<DefinitionTarget>? {
          return rpcCallWithRetry(params) {
-             leanProjectService.languageServer.await().getGotoLocation(it)
+             leanProjectService.languageServerForFile(file).await().getGotoLocation(it)
          }
     }
 
@@ -414,7 +496,7 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
         // always use the session in the file rather than the external infoview
         params.sessionId = session!!
         return rpcCallWithRetry(params) {
-            leanProjectService.languageServer.await().rpcCall(it)
+            leanProjectService.languageServerForFile(file).await().rpcCall(it)
         }
     }
 
@@ -425,7 +507,7 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
         FileEditorManager.getInstance(project).selectedTextEditor?.let { editor ->
             if (editor.virtualFile.path == unquotedFile) {
                 session = null
-                val languageServer = leanProjectService.languageServer.await()
+                val languageServer = leanProjectService.languageServerForFile(file).await()
                 val didCloseParams = DidCloseTextDocumentParams(TextDocumentIdentifier(file))
                 languageServer.didClose(didCloseParams)
                 val textDocumentItem = TextDocumentItem(
@@ -446,7 +528,15 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
     private val diagnosticsChannel = run {
         val channel = Channel<List<Diagnostic>>()
         leanProjectService.scope.launch {
-            this@LeanFile.getAllMessages(channel)
+            try {
+                this@LeanFile.getAllMessages(channel)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // getSession()/RPC inside the loop can fail while the server is restarting; swallow so it
+                // doesn't surface as an unhandled coroutine exception (SEVERE IDE error popup).
+                thisLogger().debug("getAllMessages stopped for $file (language server unavailable/restarting): ${e.message}")
+            }
         }
         channel
     }
@@ -519,8 +609,36 @@ class LeanFile(private val leanProjectService: LeanProjectService, private val f
             diagnosticsChannel.send(diagnostics.diagnostics)
         }
         for (d in diagnostics.diagnostics) {
-            buildWindowService.addBuildEvent(file, d.message)
+            buildWindowService.addBuildEvent(file, diagnosticMessage(d))
         }
+    }
+
+    /**
+     * Read a [Diagnostic]'s message without binding to a specific `getMessage()` signature.
+     *
+     * lean4ij is compiled against the IntelliJ platform's lsp4j, where `Diagnostic.getMessage()` returns
+     * `String`. At runtime, however, lean4ij runs against the lsp4ij plugin's bundled lsp4j 1.0.0, where
+     * `getMessage()` returns `Either<String, MarkupContent>`. Calling `d.message` directly therefore
+     * throws `NoSuchMethodError` the moment a diagnostic is published (i.e. whenever the file has errors),
+     * which lsp4ij surfaces to the user as "Lean Language Server: Cannot start server". Resolving the
+     * method reflectively avoids binding to the `String`-returning overload at compile time and works
+     * against either lsp4j; any failure degrades to an empty message rather than crashing the handler.
+     */
+    private fun diagnosticMessage(diagnostic: Diagnostic): String = try {
+        when (val raw = Diagnostic::class.java.getMethod("getMessage").invoke(diagnostic)) {
+            is String -> raw
+            null -> ""
+            else -> {
+                // lsp4j 1.0.0: Either<String, MarkupContent>; prefer the left String, else MarkupContent.value
+                val left = runCatching { raw.javaClass.getMethod("getLeft").invoke(raw) }.getOrNull()
+                (left as? String) ?: runCatching {
+                    val right = raw.javaClass.getMethod("getRight").invoke(raw)
+                    right?.javaClass?.getMethod("getValue")?.invoke(right) as? String
+                }.getOrNull() ?: raw.toString()
+            }
+        }
+    } catch (e: Throwable) {
+        ""
     }
 
     fun applyEdit(changes: List<ApplyEditChange>) {

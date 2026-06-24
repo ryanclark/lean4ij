@@ -6,6 +6,7 @@ import com.intellij.markdown.utils.doc.DocMarkdownToHtmlConverter
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.editor.LogicalPosition
 import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.editor.colors.EditorFontType
@@ -17,6 +18,7 @@ import com.intellij.ui.awt.RelativePoint
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.panels.VerticalLayout
 import com.intellij.ui.scale.JBUIScale.scale
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -134,6 +136,7 @@ class InfoviewPopupDocumentation(
     override fun navigate(project: Project) {
         val leanProjectService: LeanProjectService = project.service()
         leanProjectService.scope.launch {
+          try {
             val session = leanProjectService.file(file).getSession()
             // file.url has format file://I:/.. whereas file.path has format "I:/..." in windows
             // TODO absolutely the different formats for url/uri/path should be summarize somewhere
@@ -144,7 +147,7 @@ class InfoviewPopupDocumentation(
                 textDocument = textDocument,
                 position = position
             )
-            val infoToInteractive = leanProjectService.languageServer.await()
+            val infoToInteractive = leanProjectService.languageServerForFile(LspUtil.quote(file.path)).await()
                 .infoToInteractive(rpcParams)
             val typeStr = infoToInteractive.type?.toInfoObjectModel()?.toString() ?: ""
             val exprStr = infoToInteractive.exprExplicit?.toInfoObjectModel()?.toString() ?: ""
@@ -181,6 +184,13 @@ class InfoviewPopupDocumentation(
             launch(Dispatchers.EDT) {
                 createPopupPanel(doc)
             }
+          } catch (e: CancellationException) {
+              throw e
+          } catch (e: Exception) {
+              // The Lean server restarts often (transient "closed file" / RPC errors); swallow so this doesn't
+              // leak as an unhandled coroutine exception (SEVERE IDE error popup).
+              thisLogger().debug("Skip popup documentation for ${file.path} (language server unavailable/restarting): ${e.message}")
+          }
         }
     }
 
