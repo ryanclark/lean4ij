@@ -20,7 +20,9 @@ class Lean4StdLibraryProvider : AdditionalLibraryRootsProvider() {
         if (packagesPath.notExists() || !packagesPath.isDirectory()) {
             return listOf()
         }
-        val root = VfsUtil.findFile(packagesPath, true) ?: return listOf()
+        // refresh=false: getAdditionalProjectLibraries runs under a read action during indexing, where a
+        // synchronous VFS refresh is disallowed. The platform refreshes the VFS for .lake on its own.
+        val root = VfsUtil.findFile(packagesPath, false) ?: return listOf()
         return listOf(LeanLibrary("packages", root))
     }
 

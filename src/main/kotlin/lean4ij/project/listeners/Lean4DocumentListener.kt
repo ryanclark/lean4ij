@@ -1,12 +1,15 @@
 package lean4ij.project.listeners
 
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.service
+import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.LogicalPosition
 import com.intellij.openapi.editor.event.DocumentEvent
 import com.intellij.openapi.editor.event.DocumentListener
 import com.intellij.openapi.editor.ex.EditorEventMulticasterEx
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.progress.ProcessCanceledException
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.text.LineColumn
 import com.intellij.openapi.util.text.StringUtil
@@ -27,13 +30,18 @@ class Lean4DocumentListener(private val project: Project) : DocumentListener {
             // TODO do some refactor here, extract similar code
             val leanProjectService = project.service<LeanProjectService>()
             val editor = EditorFactory.getInstance().getEditors(document).firstOrNull() ?: return
-            val lineCol: LineColumn = StringUtil.offsetToLineColumn(document.text, event.offset) ?: return
+            // charsSequence (no full-document String copy) on this per-keystroke path.
+            val lineCol: LineColumn = StringUtil.offsetToLineColumn(document.charsSequence, event.offset) ?: return
             val position = LogicalPosition(lineCol.line, lineCol.column)
             // TODO this may be duplicated with caret events some times
             //      but without this there are cases no caret events but document changed events
             //      maybe some debounce
             leanProjectService.file(file).updateCaret(editor, position)
+        } catch (ex: ProcessCanceledException) {
+            // Never swallow cancellation.
+            throw ex
         } catch (ex: Exception) {
+            thisLogger().debug("updateCaret on documentChanged failed", ex)
             // TODO the project.service above once threw:
             //     Caused by: com.intellij.openapi.progress.ProcessCanceledException: com.intellij.platform.instanceContainer.internal.ContainerDisposedException: Container 'ProjectImpl@518117404 services' was disposed
             // 	            at com.intellij.serviceContainer.ComponentManagerImpl.doGetService(ComponentManagerImpl.kt:717)
@@ -49,9 +57,9 @@ class Lean4DocumentListener(private val project: Project) : DocumentListener {
         }
     }
 
-    fun register(editorEventMulticaster: EditorEventMulticasterEx) {
-        editorEventMulticaster.addDocumentListener(this) {
-            // TODO Disposable
-        }
+    fun register(editorEventMulticaster: EditorEventMulticasterEx, parentDisposable: Disposable) {
+        // Parent to a project-scoped disposable so this project-capturing listener is removed on project close
+        // instead of leaking under ROOT_DISPOSABLE.
+        editorEventMulticaster.addDocumentListener(this, parentDisposable)
     }
 }

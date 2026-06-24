@@ -44,9 +44,12 @@ class LeanProjectActivity : ProjectActivity {
     }
 
     private fun setupEditorFocusChangeEventListener(project: Project) {
+        // Parent the application-wide multicaster listeners to a project-scoped disposable so they are removed
+        // on project close (otherwise they leak under ROOT_DISPOSABLE and retain the project they capture).
+        val parent = project.service<LeanProjectDisposable>()
         (EditorFactory.getInstance().eventMulticaster as? EditorEventMulticasterEx)?.let {
-            Lean4EditorFocusChangeListener().register(it)
-            Lean4DocumentListener(project).register(it)
+            Lean4EditorFocusChangeListener().register(it, parent)
+            Lean4DocumentListener(project).register(it, parent)
         }
     }
 

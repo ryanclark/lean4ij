@@ -44,12 +44,18 @@ class LeanTextMateBundleProvider : TextMateBundleProvider {
             cached?.let { return it }
             return try {
                 val dir = Files.createTempDirectory(Path.of(PathManager.getTempPath()), "lean4ij-textmate")
+                // Clean up on JVM exit so a fresh `lean4ij-textmate*` dir does not accumulate every IDE run
+                // (PathManager temp is not cleared on shutdown). deleteOnExit removes in reverse registration
+                // order, so register the dir first and its files after, so the (now empty) dir is removed last.
+                dir.toFile().deleteOnExit()
                 for (name in BUNDLE_FILES) {
                     val resource = LeanTextMateBundleProvider::class.java.classLoader.getResourceAsStream("bundles/$name")
                         ?: error("Missing bundled TextMate resource: bundles/$name")
+                    val target = dir.resolve(name)
                     resource.use { input ->
-                        Files.copy(input, dir.resolve(name), StandardCopyOption.REPLACE_EXISTING)
+                        Files.copy(input, target, StandardCopyOption.REPLACE_EXISTING)
                     }
+                    target.toFile().deleteOnExit()
                 }
                 listOf(TextMateBundleProvider.PluginBundle("Lean 4", dir)).also { cached = it }
             } catch (e: Exception) {

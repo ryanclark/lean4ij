@@ -1,10 +1,12 @@
 package lean4ij.infoview.external
 
 import com.intellij.ide.BrowserUtil
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.ActionToolbar
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Disposer
 import com.intellij.ui.DocumentAdapter
 import com.intellij.ui.SearchTextField
 import com.intellij.ui.jcef.JBCefApp
@@ -33,7 +35,7 @@ import kotlin.reflect.KProperty0
  * TODO the name like infoview and infoView is inconsistent in the whole codebase...
  */
 @Service(Service.Level.PROJECT)
-class JcefInfoviewService(private val project: Project) {
+class JcefInfoviewService(private val project: Project) : Disposable {
     /**
      * Still cannot add case-sensitive, up and down search
      * - https://github.com/JetBrains/intellij-plugins/blob/master/qodana/core/src/org/jetbrains/qodana/ui/link/LinkCloudProjectView.kt
@@ -153,6 +155,13 @@ class JcefInfoviewService(private val project: Project) {
         // TODO make this shorter
         thisLogger().error(errMsg)
         null
+    }
+
+    override fun dispose() {
+        // JBCefBrowser owns a native CEF browser + JBCefClient; it must be disposed or it leaks native
+        // resources for the IDE's lifetime. The project-level service is disposed on project close.
+        browser?.let { Disposer.dispose(it) }
+        searchTextFlow.close()
     }
 
     /**
