@@ -41,9 +41,6 @@ sealed class TaggedText<T> where T : InfoViewContent {
     @Transient
     var codeText: String = ""
 
-    @Transient
-    var parent: TaggedText<T>? = null
-
     /**
      * The `t` here is only use in TaggedTextText
      */
@@ -78,10 +75,10 @@ class TaggedTextText<T>(val text: String) : TaggedText<T>() where T : InfoViewCo
                 return null
             }
         }
-        // `parent` is a @Transient field that is never populated on the deserialization path, so !! was a
-        // primed NPE; guard it instead.
-        val p = parent ?: return null
-        return t.contextInfo(offset, p.startOffset, p.endOffset)
+        // The remaining text-leaf hover go-to-def path used `parent`, a @Transient field never populated on
+        // the deserialization path (the old `parent!!` was a primed NPE), so it could never yield a result.
+        // Return null rather than keep the dead branch.
+        return null
     }
 }
 

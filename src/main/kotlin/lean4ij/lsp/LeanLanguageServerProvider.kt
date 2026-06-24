@@ -200,7 +200,11 @@ internal class LeanLanguageServerProvider(
         return ret
     }
 
-    private val tempLogDir = Files.createTempDirectory(Path.of(PathManager.getTempPath()), "lean-lsp").toString()
+    // Created lazily, only when server logging is enabled, so the common (logging-off) case allocates no temp
+    // dir. lsp4ij recreates this provider on every server (re)start, and now also once per Lake package, so the
+    // previous eager field initializer orphaned a lean-lsp* temp dir per (package x restart) regardless of the
+    // setting.
+    private val tempLogDir by lazy { Files.createTempDirectory(Path.of(PathManager.getTempPath()), "lean-lsp").toString() }
 
     override fun getUserEnvironmentVariables(): MutableMap<String, String> {
         if (lean4Settings.enableLeanServerLog) {

@@ -50,11 +50,11 @@ class LeanLSPCompletionFeature : LSPCompletionFeature() {
             // the replacement part later on too.
 
             // Find the start of the range to replace by walking back over the identifier prefix already
-            // typed before the caret. We must NOT use context.parameters.position.startOffset: since the
-            // native Lean parser was removed, .lean files are TextMate/plain-text backed and that element is
-            // the whole-file leaf, so its startOffset is 0. That made the replace range (0,0)->caret, which
-            // dumped the accepted suggestion at the top of the file and erased everything before the caret.
-            // Scanning the document text is PSI-independent and works for TextMate/plain/native alike.
+            // typed before the caret. We deliberately compute this from the document text rather than from
+            // context.parameters.position.startOffset: relying on the PSI position offset here was unreliable
+            // during typing (see the semantic-token-map note above), producing a (0,0)->caret replace range
+            // that dumped the accepted suggestion at the top of the file and erased everything before the
+            // caret. Scanning the document text is PSI-independent and robust.
             val document = context.parameters.position.containingFile.fileDocument
             val elementEnd = context.parameters.offset
             val chars = document.charsSequence

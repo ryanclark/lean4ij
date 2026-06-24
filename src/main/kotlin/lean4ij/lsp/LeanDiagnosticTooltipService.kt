@@ -4,6 +4,8 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.editor.Document
+import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.FileEditorManagerListener
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.redhat.devtools.lsp4ij.features.diagnostics.LSPDiagnosticsApplier
@@ -11,6 +13,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import lean4ij.infoview.renderInteractiveDiagnosticHtml
+import lean4ij.project.LeanProjectDisposable
 import lean4ij.project.LeanProjectService
 import java.util.concurrent.ConcurrentHashMap
 
@@ -47,6 +50,19 @@ class LeanDiagnosticTooltipService(private val project: Project, private val sco
     /** uri -> modification stamp currently being fetched, to dedupe concurrent warms. */
     private val inFlight = ConcurrentHashMap<String, Long>()
 
+    init {
+        // Evict a file's cached tooltips when it closes, so the cache doesn't grow for the whole project
+        // session (one FileTooltips per distinct file ever opened). Mirrors LeanSymbolColoringService;
+        // parented to a project-scoped disposable so the subscription is removed on project close.
+        project.messageBus.connect(project.service<LeanProjectDisposable>())
+            .subscribe(FileEditorManagerListener.FILE_EDITOR_MANAGER, object : FileEditorManagerListener {
+                override fun fileClosed(source: FileEditorManager, file: VirtualFile) {
+                    cache.remove(file.url)
+                    inFlight.remove(file.url)
+                }
+            })
+    }
+
     /**
      * The rich tooltip HTML for [diagnosticRange] if it has been rendered for the current [modStamp], else
      * null (caller should fall back to the plain default tooltip).
@@ -65,9 +81,9 @@ class LeanDiagnosticTooltipService(private val project: Project, private val sco
     fun warm(file: VirtualFile, document: Document, modStamp: Long, lineCount: Int) {
         val uri = file.url
         if (cache[uri]?.modStamp == modStamp) return
-        // Dedupe: at most one in-flight fetch per file. If one for this same stamp is already running, skip;
-        // otherwise record this stamp as the latest requested and proceed (an older in-flight fetch will see
-        // the stamp advanced and decline to publish).
+        // Dedupe: at most one in-flight fetch per (file, modStamp). If one for this same stamp is already
+        // running, skip; otherwise record this stamp as the latest requested and proceed. Fetches for
+        // different stamps can briefly overlap - an older one sees the stamp advanced and declines to publish.
         if (inFlight.put(uri, modStamp) == modStamp) return
         scope.launch {
             try {

@@ -79,8 +79,10 @@ class LeanLanguageServerLifecycleListener(val project: Project) {
                 try {
                     project.service<EditorHoverHighlightService>().highlightCurrentContent(message.result as Hover?)
                 } catch (e: Exception) {
-                    thisLogger().error("Failed to cast message.result to Hover with result ${message.result}", e)
-                    throw e
+                    // Degrade gracefully: this drives only the cosmetic cmd-hover highlight. Log at warn (not
+                    // error, which raises an IDE Internal Error report) and do NOT rethrow - rethrowing pushed
+                    // the exception back onto the jsonrpc reader thread for a non-essential feature.
+                    thisLogger().warn("Failed to cast message.result to Hover with result ${message.result}", e)
                 }
             }
             // This is not customize used in yet
