@@ -4,8 +4,6 @@ import com.intellij.openapi.application.EDT
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.LogicalPosition
-import com.intellij.openapi.editor.event.CaretEvent
-import com.intellij.openapi.editor.event.CaretListener
 import com.intellij.openapi.editor.event.VisibleAreaEvent
 import com.intellij.openapi.editor.event.VisibleAreaListener
 import com.intellij.openapi.project.Project
@@ -27,6 +25,17 @@ import lean4ij.lsp.data.Position
 import javax.swing.JPanel
 import javax.swing.ScrollPaneConstants
 
+/**
+ * Renders the floating "mini infoview" popup just below the editor caret (the `⊢ <type>` line).
+ *
+ * EDT confinement: all mutable state and every Editor/caret read are confined to the EDT. The public entry
+ * points ([updateCaret], [toggleVisibility]) and the scroll-debounce job hop to [Dispatchers.EDT] before
+ * touching anything; the private helpers ([cancel], [createPopover], [showAtCursor], [setupListeners],
+ * [removeListeners], [displayContent], [createOrUpdatePopupPanel]) are therefore only ever invoked on the EDT
+ * and run synchronously there (the [VisibleAreaListener] callback also fires on the EDT). Because access is
+ * single-threaded on the EDT, the fields need no synchronization, and no caretModel/editor read happens off
+ * the EDT (the previous code read editor.caretModel.logicalPosition from background coroutines).
+ */
 @Service(Service.Level.PROJECT)
 class MiniInfoviewService(private val project: Project, val scope: CoroutineScope) {
 
@@ -44,13 +53,13 @@ class MiniInfoviewService(private val project: Project, val scope: CoroutineScop
     var currentPopover: JBPopup? = null
     var miniInfoview: MiniInfoview? = null
 
+    // ---- private helpers: EDT-only (always reached from an EDT entry point below) ----
+
     private fun cancel() {
-        scope.launch(Dispatchers.EDT) {
-            removeListeners()
-            currentPopover?.cancel()
-            currentPopover = null
-            miniInfoview = null
-        }
+        removeListeners()
+        currentPopover?.cancel()
+        currentPopover = null
+        miniInfoview = null
     }
 
     private fun createPopover(editor: Editor?, position: Position?) {
@@ -98,15 +107,18 @@ class MiniInfoviewService(private val project: Project, val scope: CoroutineScop
 
         areaListener = object : VisibleAreaListener {
             override fun visibleAreaChanged(e: VisibleAreaEvent) {
+                // VisibleAreaListener fires on the EDT.
                 if (!showing) return
 
                 if (!isScrolling) {
                     isScrolling = true
-                    cancel();
+                    cancel()
                 }
 
                 scrollJob?.cancel()
-                scrollJob = scope.launch {
+                // Re-show the popup 500ms after scrolling stops. On Dispatchers.EDT so the caret read and the
+                // popup update below run on the EDT (delay is a non-blocking coroutine suspend).
+                scrollJob = scope.launch(Dispatchers.EDT) {
                     delay(500)
                     isScrolling = false
                     if (showing && lastContent != null) {
@@ -129,26 +141,26 @@ class MiniInfoviewService(private val project: Project, val scope: CoroutineScop
         areaListener = null
     }
 
-    private fun displayContent(content: InfoObjectModel, editor: Editor, position: Position) {
-        scope.launch(Dispatchers.EDT) {
-            if (currentEditor != editor || currentPopover?.isVisible != true || miniInfoview == null) {
-                createPopover(editor, position)
-            }
-
-            // Update the existing editor content
-            miniInfoview?.let { view ->
-                val editor = view.getEditor()
-                editor.markupModel.removeAllHighlighters()
-                content.output(view.getEditor())
-
-                currentPopover?.size = view.measureIntrinsicContentSize()
-            }
-
-            showAtCursor(editor, position)
+    // suspend because MiniInfoview.getEditor()/measureIntrinsicContentSize() suspend; always called on the EDT
+    // from a Dispatchers.EDT coroutine.
+    private suspend fun displayContent(content: InfoObjectModel, editor: Editor, position: Position) {
+        if (currentEditor != editor || currentPopover?.isVisible != true || miniInfoview == null) {
+            createPopover(editor, position)
         }
+
+        // Update the existing editor content
+        miniInfoview?.let { view ->
+            val viewEditor = view.getEditor()
+            viewEditor.markupModel.removeAllHighlighters()
+            content.output(viewEditor)
+
+            currentPopover?.size = view.measureIntrinsicContentSize()
+        }
+
+        showAtCursor(editor, position)
     }
 
-    private fun createOrUpdatePopupPanel(doc: InfoObjectModel?, editor: Editor?, position: Position?) {
+    private suspend fun createOrUpdatePopupPanel(doc: InfoObjectModel?, editor: Editor?, position: Position?) {
         lastContent = doc
         if (showing && lastContent != null && editor != null && position != null) {
             displayContent(lastContent!!, editor, position)
@@ -161,26 +173,32 @@ class MiniInfoviewService(private val project: Project, val scope: CoroutineScop
         return selectMiniInfoviewGoal(interactiveGoals, interactiveTermGoal, ALLOW_TERM_GOALS)
     }
 
+    // ---- public entry points: hop to the EDT before touching any state / editor ----
+
     fun updateCaret(
         editor: Editor,
         position: Position,
         interactiveGoals: InteractiveGoals?,
         interactiveTermGoal: InteractiveTermGoal?,
     ) {
-        lastContent = getGoal(interactiveGoals, interactiveTermGoal)
-        createOrUpdatePopupPanel(lastContent, editor, position)
-        // sometimes necessary for cacheing so toggle visibility can work
-        currentEditor = editor
+        scope.launch(Dispatchers.EDT) {
+            lastContent = getGoal(interactiveGoals, interactiveTermGoal)
+            createOrUpdatePopupPanel(lastContent, editor, position)
+            // sometimes necessary for cacheing so toggle visibility can work
+            currentEditor = editor
+        }
     }
 
     fun toggleVisibility() {
-        showing = !showing
-        if (showing && lastContent != null && currentEditor != null) {
-            val caretPosition = currentEditor!!.caretModel.logicalPosition
-            val position = Position(caretPosition.line, caretPosition.column)
-            createOrUpdatePopupPanel(lastContent, currentEditor, position)
-        } else {
-            cancel()
+        scope.launch(Dispatchers.EDT) {
+            showing = !showing
+            if (showing && lastContent != null && currentEditor != null) {
+                val caretPosition = currentEditor!!.caretModel.logicalPosition
+                val position = Position(caretPosition.line, caretPosition.column)
+                createOrUpdatePopupPanel(lastContent, currentEditor, position)
+            } else {
+                cancel()
+            }
         }
     }
 }
