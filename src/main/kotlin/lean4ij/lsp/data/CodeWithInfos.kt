@@ -27,7 +27,11 @@ interface InfoViewContent {
  * maybe it can be reified, check
  * https://discuss.kotlinlang.org/t/reified-generics-on-class-level/16711/4
  */
-abstract class TaggedText<T> where T : InfoViewContent {
+// sealed (not just abstract): the three subtypes below are the only TaggedText shapes (mirroring Lean's
+// TaggedText.lean text|tag|append union), so a `when` over them is exhaustive. Discrimination from JSON is
+// hand-written in LeanLanguageServer.registerTaggedText by key, which constructs these concrete subtypes
+// directly, so `sealed` does not affect gson.
+sealed class TaggedText<T> where T : InfoViewContent {
     @Transient
     var startOffset: Int = -1
 
