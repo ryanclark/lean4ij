@@ -47,7 +47,6 @@ import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import java.awt.Color
 import java.util.*
-import java.util.Collections.synchronizedMap
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
 
@@ -155,8 +154,12 @@ abstract class InlayHintBase(protected val editor: Editor, protected val project
         const val TIMEOUT_DEBOUNCE_MILLIS: Long = 20
 
         val lean4Settings = service<Lean4Settings>()
-        val scheduledRecomputations = synchronizedMap(IdentityHashMap<PsiFile, Long>());
     }
+
+    // Per-collector (the collector is bound to one editor/file), replacing a static
+    // IdentityHashMap<PsiFile, Long> that retained every PsiFile ever recomputed for the app lifetime.
+    @Volatile
+    private var lastScheduledRecompute: Long = -1
 
     override fun collectFromElement(element: PsiElement, sink: InlayTreeSink) {
         // if the language server is not start, return directly
@@ -238,11 +241,8 @@ abstract class InlayHintBase(protected val editor: Editor, protected val project
         delay(TIMEOUT_DEBOUNCE_MILLIS)
 
         // only the latest recompute should run
-        val scheduleTime = scheduledRecomputations.getOrDefault(file, -1)
-        if (scheduleTime < readTime) {
-            val currentTime = System.currentTimeMillis()
-
-            scheduledRecomputations.put(file, currentTime)
+        if (lastScheduledRecompute < readTime) {
+            lastScheduledRecompute = System.currentTimeMillis()
 
             DeclarativeInlayHintsPassFactory.scheduleRecompute(editor, file.project)
             DaemonCodeAnalyzer.getInstance(project).restart(file)

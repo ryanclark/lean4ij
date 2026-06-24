@@ -6,6 +6,8 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
 import com.intellij.openapi.editor.Document
+import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.FileEditorManagerListener
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.VirtualFile
@@ -80,6 +82,21 @@ class LeanSymbolColoringService(private val project: Project) {
     private val importResolution = ConcurrentHashMap<String, MutableMap<String, ImportKind>>()
     /** file path -> the modificationStamp currently being (re)computed, to avoid duplicate launches. */
     private val computing = ConcurrentHashMap<String, Long>()
+
+    init {
+        // Evict per-file caches when a file is closed, so these maps don't grow unbounded over a long session
+        // (notably when browsing many library sources via go-to-definition). Parented to a project-scoped
+        // disposable so the subscription is removed on project close.
+        project.messageBus.connect(project.service<LeanProjectDisposable>())
+            .subscribe(FileEditorManagerListener.FILE_EDITOR_MANAGER, object : FileEditorManagerListener {
+                override fun fileClosed(source: FileEditorManager, file: VirtualFile) {
+                    val path = file.path
+                    cache.remove(path)
+                    importResolution.remove(path)
+                    computing.remove(path)
+                }
+            })
+    }
 
     /** The def/theorem/function names to color in [path] (the annotator tests each identifier against this set). */
     fun namesFor(path: String): Set<String> = cache[path]?.names ?: emptySet()
