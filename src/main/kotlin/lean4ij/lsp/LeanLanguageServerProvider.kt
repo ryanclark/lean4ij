@@ -48,16 +48,22 @@ internal class LeanLanguageServerProvider(
         }
         val instance = LanguageServerLifecycleManager.getInstance(project)
 
-        // 首先尝试直接查找方法
-        val methods = instance::class.java.methods
-
-        // 查找名为 addLanguageServerLifecycleListener 的方法
-        val targetMethod = methods.find { method ->
-            method.name == "addLanguageServerLifecycleListener" &&
-                    method.parameterCount == 1
+        // Resolve addLanguageServerLifecycleListener reflectively (lsp4ij marks the listener interface
+        // internal). Degrade gracefully if a future lsp4ij renames/overloads it rather than NPE-ing on a
+        // bare !! at server start, which would break the whole server bring-up.
+        val targetMethod = instance::class.java.methods.find { method ->
+            method.name == "addLanguageServerLifecycleListener" && method.parameterCount == 1
         }
-
-        targetMethod!!.invoke(instance, LeanLanguageServerLifecycleListenerProxyFactory.create(project))
+        if (targetMethod == null) {
+            thisLogger().error(
+                "lsp4ij API changed: addLanguageServerLifecycleListener(1 arg) not found; " +
+                    "Lean server lifecycle features (file-progress bar, hover highlight) are disabled"
+            )
+            // Roll back the one-time guard so a later attempt can retry.
+            project.service<LeanProjectService>().lifecycleListenerRegistered.set(false)
+            return
+        }
+        targetMethod.invoke(instance, LeanLanguageServerLifecycleListenerProxyFactory.create(project))
     }
 
 
