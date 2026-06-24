@@ -13,6 +13,7 @@ import com.intellij.navigation.NavigationItem
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.diagnostic.thisLogger
+import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.psi.search.GlobalSearchScope
 import com.intellij.util.Processor
@@ -27,6 +28,8 @@ import org.eclipse.lsp4j.WorkspaceSymbol
 import org.eclipse.lsp4j.WorkspaceSymbolParams
 import java.time.Duration
 import java.util.concurrent.ExecutionException
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 
 /**
@@ -107,6 +110,12 @@ class Lean4WorkspaceClassContributor : Lean4ChooseByNameContributorEx() {
 class WorkspaceSymbolsCacheLoader(private val project: Project) :
     CacheLoader<String, List<LeanWorkspaceSymbolData>>() {
 
+    companion object {
+        // Lean's server ignores $/cancelRequest, so an un-timed get() on a hung server would pin this
+        // Goto-Symbol worker thread indefinitely. Bound both blocking gets.
+        private const val GET_TIMEOUT_SECONDS = 30L
+    }
+
     override fun load(key: String): List<LeanWorkspaceSymbolData> {
         thisLogger().info("loading symbols for $key")
 
@@ -115,8 +124,13 @@ class WorkspaceSymbolsCacheLoader(private val project: Project) :
         //      maybe the best way is make a pr to lean4 for not file progress in didOpen request...
         project.service<LeanProjectService>().isEnable.set(true)
         // TODO change the old way getting language server to this maybe!
-        val languageServerItem = LanguageServerManager.getInstance(project)
-            .getLanguageServer("lean").get()
+        val languageServerItem = try {
+            LanguageServerManager.getInstance(project)
+                .getLanguageServer("lean").get(GET_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        } catch (e: TimeoutException) {
+            thisLogger().warn("timed out resolving lean language server for workspace symbols ($key)")
+            return listOf()
+        }
         if (languageServerItem == null) {
             // for guava loading cache, in fact this cannot be null
             // return null will trigger an exception and do not cache the value(null)
@@ -126,7 +140,12 @@ class WorkspaceSymbolsCacheLoader(private val project: Project) :
         }
         val ls = languageServerItem.server
         val params = WorkspaceSymbolParams(key)
-        val symbols = ls.workspaceService.symbol(params).get() ?: return listOf()
+        val symbols = try {
+            ls.workspaceService.symbol(params).get(GET_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        } catch (e: TimeoutException) {
+            thisLogger().warn("timed out fetching workspace symbols for $key")
+            return listOf()
+        } ?: return listOf()
         val items: MutableList<LeanWorkspaceSymbolData> = ArrayList()
         if (symbols.isLeft) {
             val s = symbols.left
@@ -199,6 +218,9 @@ class WorkspaceSymbolsCache(private val project: Project) {
             if (i * SLEEP_TIME > lean4Settings.workspaceSymbolTriggerDebouncingTime) {
                 break
             }
+            // Honor cancellation: Goto-Symbol/Class runs this on a pooled thread under a ProgressIndicator,
+            // so when the user keeps typing or closes the popup this unwinds instead of sleeping on.
+            ProgressManager.checkCanceled()
             Thread.sleep(SLEEP_TIME)
             val newCnt = requestCounter.get()
             if (currentCnt != newCnt) {

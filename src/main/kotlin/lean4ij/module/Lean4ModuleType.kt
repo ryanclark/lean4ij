@@ -18,6 +18,8 @@ import com.intellij.ide.util.projectWizard.WizardContext
 import com.intellij.ide.wizard.GeneratorNewProjectWizard
 import com.intellij.ide.wizard.GeneratorNewProjectWizardBuilderAdapter
 import com.intellij.ide.wizard.NewProjectWizardStep
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ModalityState
 import com.intellij.openapi.components.BaseState
 import com.intellij.openapi.components.service
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
@@ -26,7 +28,6 @@ import com.intellij.execution.executors.DefaultRunExecutor
 import com.intellij.openapi.observable.properties.GraphProperty
 import com.intellij.openapi.observable.properties.PropertyGraph
 import com.intellij.openapi.observable.util.joinCanonicalPath
-import com.intellij.openapi.observable.util.transform
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.BrowseFolderDescriptor.Companion.withPathToTextConvertor
 import com.intellij.openapi.ui.BrowseFolderDescriptor.Companion.withTextToPathConvertor
@@ -95,14 +96,10 @@ class QuickStarterModel(private val propertyGraph: PropertyGraph, private val wi
     val locationProperty = propertyGraph.lazyProperty(::suggestLocationByName)
     val fetchingTagsFromGithubProperty = propertyGraph.lazyProperty { false }
     val fetchingTagsError = propertyGraph.lazyProperty { "" }
-    val allVersionsProperty = fetchingTagsFromGithubProperty.transform(
-        map = {
-            getVersions(it)
-        },
-        backwardMap = {
-            throw IllegalStateException("versionProperty should not backward map to fetchingTagsFromGithubProperty")
-        }
-    )
+    // Initialized with the local (non-network) versions. The GitHub fetch runs off the EDT in the afterChange
+    // listener in init below and is pushed back here, instead of running a blocking HTTPS request inside a
+    // synchronous property transform on the EDT, which froze the wizard for up to ~10s when the checkbox toggled.
+    val allVersionsProperty: GraphProperty<List<String>> = propertyGraph.property(getVersions(false))
     val versionProperty = propertyGraph.lazyProperty {
         allVersionsProperty.get()[0]
     }
@@ -111,6 +108,20 @@ class QuickStarterModel(private val propertyGraph: PropertyGraph, private val wi
     val canonicalPathProperty = locationProperty.joinCanonicalPath(entityNameProperty)
     val templatesProperty = propertyGraph.property(TEMPLATES.first())
     val languagesProperty = propertyGraph.property(LANGUAGES.first())
+
+    init {
+        // When the "fetch tags from GitHub" toggle changes, fetch off the EDT and publish the result back on
+        // the EDT (any modality, so it applies while the wizard dialog is open) so the version combobox, which
+        // observes allVersionsProperty, refreshes without freezing the wizard on the blocking HTTPS request.
+        fetchingTagsFromGithubProperty.afterChange { fromGithub ->
+            ApplicationManager.getApplication().executeOnPooledThread {
+                val versions = getVersions(fromGithub)
+                ApplicationManager.getApplication().invokeLater({
+                    allVersionsProperty.set(versions)
+                }, ModalityState.any())
+            }
+        }
+    }
 
     private fun suggestName(): String {
         return suggestName("Untitled")

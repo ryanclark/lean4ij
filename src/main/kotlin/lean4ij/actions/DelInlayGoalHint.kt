@@ -29,16 +29,19 @@ class DelInlayGoalHint : AnAction() {
 
         val settings = service<Lean4Settings>();
 
-        val lastLine = StringUtil.offsetToLineColumn(editor.document.text, selectionEnd).line;
-        var firstLine = StringUtil.offsetToLineColumn(editor.document.text, selectionStart).line;
+        // Read the document once. The loop runs bottom-up (lastLine downTo firstLine) and only deletes whole
+        // lines, so each deletion shifts only higher offsets that were already processed; the cached offsets
+        // for the lines still to process stay valid. Re-reading document.text each iteration copied the whole
+        // document per line (O(lines * length)) inside the WriteAction on the EDT.
+        val text = editor.document.text
+        val lastLine = StringUtil.offsetToLineColumn(text, selectionEnd).line;
+        var firstLine = StringUtil.offsetToLineColumn(text, selectionStart).line;
         if (selectionStart == selectionEnd) {
             firstLine = maxOf(0, firstLine - 1);
         }
 
         WriteAction.run<Throwable> {
             for (i in lastLine downTo firstLine) {
-
-                val text = editor.document.text
                 val lineStart = StringUtil.lineColToOffset(text, i, 0);
                 val lineEnd = StringUtil.lineColToOffset(text, i + 1, 0);
                 val line = text.substring(lineStart, lineEnd).trim();

@@ -17,9 +17,7 @@ import lean4ij.project.ToolchainService
 import lean4ij.util.notifyErr
 import java.nio.file.Path
 import java.nio.file.Paths
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.isRegularFile
@@ -74,9 +72,13 @@ class SdkService(private val project: Project) {
         val toolchainPath = getHomePath(toolchain)?.toString() ?: return
         val sdkName = toolchain.split('/').last().replace(':', ' ')
         var sdk: Sdk? = ProjectJdkTable.getInstance().findJdk(sdkName)
-        val sdkCompletable = CompletableFuture<Sdk>()
         if (sdk == null) {
-            application.invokeLater {
+            // Create the SDK in a write action. invokeAndWait + a holder works whether setupModule runs on the
+            // EDT (createProject's ToolWindowManager.invokeLater) or a background thread. The previous code
+            // blocked on a future completed from invokeLater, which deadlocked for 20s when setupModule was
+            // itself already on the EDT (the completing invokeLater could not run until this returned).
+            val created = AtomicReference<Sdk>()
+            application.invokeAndWait {
                 application.runWriteAction {
                     ProjectJdkTable.getInstance().run {
                         val newSdk = ProjectJdkImpl(sdkName, Lean4SdkType.INSTANCE)
@@ -90,18 +92,14 @@ class SdkService(private val project: Project) {
                             commitChanges()
                         }
                         addJdk(newSdk)
-                        sdkCompletable.complete(newSdk)
+                        created.set(newSdk)
                     }
                 }
             }
-        } else {
-            sdkCompletable.complete(sdk)
+            sdk = created.get()
         }
 
-        // TODO maybe it's not a good way doing it synchronously
-        // TODO It indeed can be ran out of time
         try {
-            sdk = sdkCompletable.get(20, TimeUnit.SECONDS)
             project.basePath?.let { basePath ->
                 thisLogger().info("current module is $basePath")
                 project.modules.singleOrNull()?.let {
@@ -130,8 +128,8 @@ class SdkService(private val project: Project) {
                     project.save()
                 }
             }
-        } catch (e: TimeoutException) {
-            project.notifyErr("Timeout for setting uyp the sdk for $toolchain")
+        } catch (e: Exception) {
+            project.notifyErr("Failed to set up the SDK for $toolchain")
             thisLogger().error(e)
         }
     }
