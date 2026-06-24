@@ -4,6 +4,7 @@ import com.google.common.io.Resources
 import com.intellij.lang.annotation.AnnotationHolder
 import com.intellij.lang.annotation.Annotator
 import com.intellij.lang.annotation.HighlightSeverity
+import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.components.service
 import com.intellij.openapi.editor.DefaultLanguageHighlighterColors
 import com.intellij.openapi.editor.colors.TextAttributesKey
@@ -35,7 +36,7 @@ import java.util.concurrent.ConcurrentHashMap
  * Short-circuits on anything that isn't the [PsiFile], and is guarded by [LeanUtil.isLeanFile]. Occurrences
  * inside comments and strings are skipped. All colors are editable in the Lean color settings page.
  */
-class LeanConstReferenceAnnotator : Annotator {
+class LeanConstReferenceAnnotator : Annotator, DumbAware {
 
     override fun annotate(element: PsiElement, holder: AnnotationHolder) {
         if (element !is PsiFile) return

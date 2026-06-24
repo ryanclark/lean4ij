@@ -180,7 +180,7 @@ fun externalInfoViewRoute(project: Project, service : ExternalInfoViewService) :
                     if (frame is Frame.Text) {
                         val text = frame.readText()
                         logger.trace("ws received: $text")
-                        val (requestId, method, data) = text.split(Regex(","), 3)
+                        val (requestId, method, data) = text.split(",", limit = 3)
                         if (method == "createRpcSession") {
                             launch {
                                 val params: RpcConnectParams = fromJson(data)

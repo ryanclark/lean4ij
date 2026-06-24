@@ -10,11 +10,13 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
+private val COMMAND_WHITESPACE = Regex("\\s+")
+
 /**
  * TODO the api seems not in a good design here, the concrete command should not be the subject
  */
 fun String.execute(workingDir: File, environments: Map<String, String> = mapOf()): String {
-    val parts = this.split("\\s".toRegex())
+    val parts = this.split(COMMAND_WHITESPACE)
     val processBuilder = ProcessBuilder(*parts.toTypedArray())
     // set environments
     processBuilder.environment().putAll(environments)

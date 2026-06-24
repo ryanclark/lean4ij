@@ -8,10 +8,13 @@ package lean4ij.language
  */
 object Lean4Format {
 
+    private val TRAILING_WS = Regex("[ \\t]+(?=\\n)")          // trailing whitespace on each line
+    private val BLANK_LINE_RUNS = Regex("\\n([ \\t]*\\n){2,}") // 2+ blank lines
+
     fun normalize(text: String): String {
         var t = sortImportBlocks(text)
-        t = t.replace(Regex("[ \\t]+(?=\\n)"), "")           // strip trailing whitespace on each line
-        t = t.replace(Regex("\\n([ \\t]*\\n){2,}"), "\n\n")  // collapse 2+ blank lines to a single blank line
+        t = t.replace(TRAILING_WS, "")
+        t = t.replace(BLANK_LINE_RUNS, "\n\n")
         return t
     }
 

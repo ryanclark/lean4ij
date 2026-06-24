@@ -224,7 +224,8 @@ class LeanProjectService(val project: Project, val scope: CoroutineScope)  {
         val file = FileDocumentManager.getInstance().getFile(document)?:return
         if (!LeanUtil.isLeanFile(file)) return
         val editor = EditorFactory.getInstance().getEditors(document).firstOrNull()?:return
-        val lineCol : LineColumn = StringUtil.offsetToLineColumn(document.text, editor.caretModel.offset) ?: return
+        // charsSequence (no full-document copy) on this per-caret/keystroke path.
+        val lineCol : LineColumn = StringUtil.offsetToLineColumn(document.charsSequence, editor.caretModel.offset) ?: return
         val position = LogicalPosition(lineCol.line, lineCol.column)
         // TODO this may be duplicated with caret events some times
         //      but without this there are cases no caret events but document changed events
@@ -236,7 +237,7 @@ class LeanProjectService(val project: Project, val scope: CoroutineScope)  {
         val document = editor.document
         val file = FileDocumentManager.getInstance().getFile(document)?:return
         if (!LeanUtil.isLeanFile(file)) return
-        val lineCol : LineColumn = StringUtil.offsetToLineColumn(document.text, editor.caretModel.offset) ?: return
+        val lineCol : LineColumn = StringUtil.offsetToLineColumn(document.charsSequence, editor.caretModel.offset) ?: return
         val position = LogicalPosition(lineCol.line, lineCol.column)
         // TODO this may be duplicated with caret events some times
         //      but without this there are cases no caret events but document changed events

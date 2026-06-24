@@ -12,6 +12,7 @@ import com.intellij.openapi.editor.colors.TextAttributesKey.createTextAttributes
 import com.intellij.openapi.fileTypes.SyntaxHighlighter
 import com.intellij.openapi.fileTypes.SyntaxHighlighterBase
 import com.intellij.openapi.fileTypes.SyntaxHighlighterFactory
+import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.psi.PsiElement
@@ -144,7 +145,7 @@ class Lean4SyntaxHighlighterFactory : SyntaxHighlighterFactory() {
  * ref: https://plugins.jetbrains.com/docs/intellij/syntax-highlighting-and-error-highlighting.html
  * TODO use customized text attributes
  */
-class Lean4Annotator : Annotator {
+class Lean4Annotator : Annotator, DumbAware {
     private val lean4Settings = service<Lean4Settings>()
 
     override fun annotate(element: PsiElement, holder: AnnotationHolder) {

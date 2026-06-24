@@ -46,9 +46,14 @@ class LeanLibrary(
 
     override fun equals(other: Any?): Boolean = other is LeanLibrary && other.root == root
 
-    override fun getSourceRoots() = root.children.toList()
+    // Computed once: getSourceRoots/getBinaryRoots are queried frequently (indexing, scope checks) and
+    // root.children can trigger directory enumeration + a fresh list each call. A new LeanLibrary is created
+    // when the provider re-queries, so a stale snapshot is replaced rather than mutated here.
+    private val childRoots by lazy { root.children.toList() }
 
-    override fun getBinaryRoots() = root.children.toList()
+    override fun getSourceRoots() = childRoots
+
+    override fun getBinaryRoots() = childRoots
 
     override fun getLocationString() = ""
 

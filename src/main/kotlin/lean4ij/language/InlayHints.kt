@@ -427,6 +427,11 @@ class GoalInlayHintsProvider : InlayHintsProvider {
 
 class PlaceHolderInlayHintsCollector(editor: Editor, project: Project?) : InlayHintBase(editor, project) {
 
+    companion object {
+        // Hoisted so it is compiled once, not per computeFor on the recompute path.
+        private val PLACEHOLDER_REGEX = Regex("""\b_\b""")
+    }
+
     override suspend fun computeFor(file: LeanFile, content: String): HintSet {
         if (project == null) {
             return HintSet()
@@ -440,7 +445,7 @@ class PlaceHolderInlayHintsCollector(editor: Editor, project: Project?) : InlayH
         val quoted = LspUtil.quote(file.virtualFile?.path ?: return hints)
         val languageServer = leanProject.languageServerForFile(quoted).await().languageServer
         val textDocument = TextDocumentIdentifier(quoted)
-        for (m in Regex("""\b_\b""").findAll(content)) {
+        for (m in PLACEHOLDER_REGEX.findAll(content)) {
             val lineColumn = StringUtil.offsetToLineColumn(content, m.range.first)
             // A second Position type (lean4ij.lsp.data.Position) is imported, so qualify the lsp4j one here.
             val position = org.eclipse.lsp4j.Position(lineColumn.line, lineColumn.column)
