@@ -10,7 +10,7 @@
       which FileTypeManager prefers over any TextMate grammar association, so the editor stays on the native
       JFlex/Grammar-Kit highlighter. The grammar here is used only for the hover code-fence lookup.
     -->
-    <extensions defaultExtensionPointName="com.intellij">
+    <extensions defaultExtensionNs="com.intellij">
         <textmate.bundleProvider implementation="lean4ij.language.LeanTextMateBundleProvider"/>
     </extensions>
 </idea-plugin>

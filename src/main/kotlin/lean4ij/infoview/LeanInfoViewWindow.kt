@@ -210,7 +210,12 @@ class LeanInfoViewWindow(val toolWindow: ToolWindow) : SimpleToolWindowPanel(tru
             installPopupHandler(newEditor)
             currentEditor = newEditor
             editor = CompletableDeferred<EditorEx>().apply { complete(newEditor) }
-            old?.let { EditorFactory.getInstance().releaseEditor(it) }
+            // Mirror dispose(): clear the fold-listener disposable stored in the editor's user data before
+            // releasing, or the last render's FoldingListener leaks (releaseEditor does not walk user data).
+            old?.let {
+                clearFoldListeners(it)
+                EditorFactory.getInstance().releaseEditor(it)
+            }
         }
     }
 

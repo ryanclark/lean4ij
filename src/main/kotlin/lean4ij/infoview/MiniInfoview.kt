@@ -2,6 +2,7 @@ package lean4ij.infoview
 
 import com.intellij.openapi.application.EDT
 import com.intellij.openapi.components.service
+import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.colors.EditorColors
 import com.intellij.openapi.editor.colors.EditorFontType
 import com.intellij.openapi.editor.ex.EditorEx
@@ -16,6 +17,15 @@ import java.awt.Dimension
 
 class MiniInfoview(val project: Project) : SimpleToolWindowPanel(true) {
     private val editor : CompletableDeferred<EditorEx> = CompletableDeferred()
+
+    // The created viewer editor, tracked so [release] can hand it back to EditorFactory. createViewer must be
+    // matched by EditorFactory.releaseEditor or the EditorView leaks under ROOT_DISPOSABLE (same contract the
+    // sibling LeanInfoViewWindow documents). @Volatile so [release] sees the write the init coroutine makes;
+    // both run on the EDT, so there is no actual race, but keep the visibility guarantee explicit.
+    @Volatile
+    private var createdEditor: EditorEx? = null
+    @Volatile
+    private var released = false
 
     suspend fun getEditor(): EditorEx {
         return editor.await()
@@ -32,12 +42,30 @@ class MiniInfoview(val project: Project) : SimpleToolWindowPanel(true) {
                 editor0.setCaretEnabled(false)
                 editor0.setCaretVisible(false)
                 editor0.colorsScheme.setColor(EditorColors.CARET_ROW_COLOR, null)
+                if (released) {
+                    // Released before this editor finished creating; hand it back rather than leak it.
+                    EditorFactory.getInstance().releaseEditor(editor0)
+                    return@launch
+                }
+                createdEditor = editor0
                 editor.complete(editor0)
                 setContent(editor0.component)
             } catch (ex: Throwable) {
                 editor.completeExceptionally(ex)
             }
         }
+    }
+
+    /**
+     * Release the underlying viewer editor. [MiniInfoviewService] builds a fresh [MiniInfoview] on every
+     * popover (re)show and drops the previous one, so without this the createViewer-backed EditorView leaks
+     * under ROOT_DISPOSABLE on every editor switch and every scroll. Must be called on the EDT (releaseEditor's
+     * contract); the service's cancel()/createPopover() callers are EDT-confined.
+     */
+    fun release() {
+        released = true
+        createdEditor?.let { EditorFactory.getInstance().releaseEditor(it) }
+        createdEditor = null
     }
 
     suspend fun measureIntrinsicContentSize(): Dimension {

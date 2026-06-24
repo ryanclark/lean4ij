@@ -186,7 +186,7 @@ class InfoviewPopupDocumentation(
         }
     }
 
-    fun createDocPanel(doc: String, i: Int): JEditorPane {
+    fun createDocPanel(doc: String): JEditorPane {
         val toolWindowSize = toolWindow.toolWindow.component.size
         val maxWidth = toolWindowSize.width * 8 / 10
         val maxHeight = toolWindowSize.height * 8 / 10
@@ -200,8 +200,7 @@ class InfoviewPopupDocumentation(
      */
     fun createPopupPanel(doc: String) {
         val factory = JBPopupFactory.getInstance()
-        val toolWindowSize = toolWindow.toolWindow.component.size
-        val docPanel = createDocPanel(doc, toolWindowSize.width * 8 / 10)
+        val docPanel = createDocPanel(doc)
         val jPanel = JPanel(VerticalLayout(1))
         jPanel.add(docPanel)
         val popup = JBScrollPane(jPanel)

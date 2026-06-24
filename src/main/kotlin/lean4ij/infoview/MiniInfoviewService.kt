@@ -48,6 +48,10 @@ class MiniInfoviewService(private val project: Project, val scope: CoroutineScop
     private var scrollJob: Job? = null
     private var currentEditor: Editor? = null
     private var areaListener: VisibleAreaListener? = null
+    // The editor [areaListener] is actually registered on. Tracked separately from [currentEditor] because
+    // currentEditor is only assigned after the suspending popup build in updateCaret; a scroll arriving during
+    // that await window must still remove the listener from the right editor, or it leaks on the new editor.
+    private var listenerEditor: Editor? = null
 
     var lastContent: InfoObjectModel? = null
     var currentPopover: JBPopup? = null
@@ -59,6 +63,9 @@ class MiniInfoviewService(private val project: Project, val scope: CoroutineScop
         removeListeners()
         currentPopover?.cancel()
         currentPopover = null
+        // Release the dropped view's viewer editor before nulling it, or its EditorView leaks under
+        // ROOT_DISPOSABLE. EDT-only (see class doc), matching releaseEditor's contract.
+        miniInfoview?.release()
         miniInfoview = null
     }
 
@@ -66,6 +73,8 @@ class MiniInfoviewService(private val project: Project, val scope: CoroutineScop
         if (editor == null || position == null) return
 
         val factory = JBPopupFactory.getInstance()
+        // Release the previous view's editor before replacing it (each MiniInfoview owns a createViewer editor).
+        miniInfoview?.release()
         miniInfoview = MiniInfoview(project)
         val jPanel = JPanel(VerticalLayout(1))
         jPanel.add(miniInfoview)
@@ -132,13 +141,17 @@ class MiniInfoviewService(private val project: Project, val scope: CoroutineScop
 
         // Register listeners
         editor.scrollingModel.addVisibleAreaListener(areaListener!!)
+        listenerEditor = editor
     }
 
     private fun removeListeners() {
-        currentEditor?.let { editor ->
+        // Remove from the editor the listener was actually registered on (listenerEditor), not currentEditor:
+        // currentEditor can still be stale/null when a scroll fires during updateCaret's suspending build.
+        listenerEditor?.let { editor ->
             areaListener?.let { editor.scrollingModel.removeVisibleAreaListener(it) }
         }
         areaListener = null
+        listenerEditor = null
     }
 
     // suspend because MiniInfoview.getEditor()/measureIntrinsicContentSize() suspend; always called on the EDT

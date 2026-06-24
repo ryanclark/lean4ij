@@ -84,7 +84,7 @@ fun renderInteractiveDiagnosticHtml(diagnostic: InteractiveDiagnostics): String 
     sb.append(body)
     sb.append("</pre>")
     if (diagnostic.source.isNotBlank()) {
-        sb.append("<span style=\"font: italic;\">").append(escapeHtml(diagnostic.source)).append("</span>")
+        sb.append("<span style=\"font-style: italic;\">").append(escapeHtml(diagnostic.source)).append("</span>")
     }
     sb.append("</html>")
     return sb.toString()
