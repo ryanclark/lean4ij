@@ -71,9 +71,15 @@ class LeanInfoViewWindow(val toolWindow: ToolWindow) : SimpleToolWindowPanel(tru
     private var editor : CompletableDeferred<EditorEx> = CompletableDeferred()
 
     // The editors actually created, tracked so dispose()/restartEditor can release them. createViewer must be
-    // matched by EditorFactory.releaseEditor or the EditorView leaks under ROOT_DISPOSABLE.
+    // matched by EditorFactory.releaseEditor or the EditorView leaks under ROOT_DISPOSABLE. @Volatile so the
+    // non-suspending currentEditorOrNull accessor sees writes made on the EDT.
+    @Volatile
     private var currentEditor: EditorEx? = null
     private var currentPopupEditor: EditorEx? = null
+
+    /** The current infoview editor if it has been created, else null. Non-suspending, for callers (e.g.
+     *  actions on a background thread) that cannot block; use [getEditor] to await creation. */
+    val currentEditorOrNull: EditorEx? get() = currentEditor
 
     @Volatile
     private var disposed = false

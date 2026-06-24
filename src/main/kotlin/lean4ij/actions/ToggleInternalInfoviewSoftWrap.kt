@@ -7,9 +7,6 @@ import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.actions.AbstractToggleUseSoftWrapsAction
 import com.intellij.openapi.editor.impl.softwrap.SoftWrapAppliancePlaces
 import com.intellij.openapi.util.IconLoader
-import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeout
 import lean4ij.infoview.LeanInfoviewService
 
 /**
@@ -27,20 +24,14 @@ class ToggleInternalInfoviewSoftWrap : AbstractToggleUseSoftWrapsAction(SoftWrap
     }
 
     override fun getActionUpdateThread(): ActionUpdateThread {
-        return ActionUpdateThread.BGT;
+        return ActionUpdateThread.BGT
     }
 
     override fun getEditor(e: AnActionEvent): Editor? {
         val project = e.project ?: return null
         val toolWindow = project.service<LeanInfoviewService>().toolWindow ?: return null
-        return runBlocking {
-            try {
-                withTimeout(1000) {
-                    toolWindow.getEditor()
-                }
-            } catch (ex: TimeoutCancellationException) {
-                null
-            }
-        }
+        // Non-blocking: read the already-created editor instead of runBlocking on the action thread for up to
+        // a second. If the infoview editor isn't ready yet this returns null and the toggle simply no-ops.
+        return toolWindow.currentEditorOrNull
     }
 }
