@@ -28,6 +28,29 @@ class LeanLSPCompletionFeature : LSPCompletionFeature() {
      */
     override fun useContextAwareSorting(file: PsiFile): Boolean = true
 
+    /**
+     * Force completion-item resolve support so the type/signature shows in the popup. The Lean server computes
+     * a completion's type lazily via `completionItem/resolve` (keeping the initial response fast), so items
+     * arrive with no `detail`. lsp4ij gates resolve on the server advertising `resolveProvider`, which the Lean
+     * server does not, so it never resolved and the type column stayed empty. With this on, lsp4ij's
+     * resolve-on-focus path (LSPCompletionProposal.getExpensiveRenderer) resolves the highlighted item on a
+     * background thread and fills its type from the resolved `detail` - the same mechanism VS Code uses. If the
+     * server cannot resolve an item, lsp4ij handles the null result gracefully (no type, no error).
+     */
+    override fun isResolveCompletionSupported(file: PsiFile): Boolean = true
+
+    /**
+     * The type text shown on the right of each item. lsp4ij's default returns `labelDetails.description`
+     * whenever `labelDetails` is non-null - even if that description is blank - and only falls back to `detail`
+     * when `labelDetails` is null. Prefer the first non-blank of description / labelDetails.detail / detail so a
+     * populated type (including the one filled in by resolve above) is always shown.
+     */
+    override fun getTypeText(item: CompletionItem): String? {
+        item.labelDetails?.description?.takeIf { it.isNotBlank() }?.let { return it }
+        item.labelDetails?.detail?.takeIf { it.isNotBlank() }?.let { return it }
+        return item.detail?.takeIf { it.isNotBlank() }
+    }
+
     override fun createLookupElement(
         item: CompletionItem,
         context: LSPCompletionContext
