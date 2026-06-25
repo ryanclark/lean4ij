@@ -2,7 +2,6 @@ package lean4ij.infoview.external
 
 import com.google.gson.Gson
 import com.google.gson.JsonElement
-import com.intellij.notification.BrowseNotificationAction
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
@@ -28,7 +27,6 @@ import lean4ij.project.BuildWindowService
 import lean4ij.project.LeanProjectService
 import lean4ij.util.Constants
 import lean4ij.util.OsUtil
-import lean4ij.util.notify
 import org.eclipse.lsp4j.InitializeResult
 import java.io.File
 import java.net.URL
@@ -138,9 +136,9 @@ class ExternalInfoViewService(val project: Project) : Disposable {
         // TODO not easier to show though
         // GotItTooltip("externalInfoView", tooltipMessage).show()
 
-        project.notify("infoview server start at") {
-            it.addAction(BrowseNotificationAction(url, url))
-        }
+        // Log the server URL instead of popping a balloon on every server (re)start: the address is only of
+        // interest when opening the infoview in an external browser, and the notification fired on each start.
+        thisLogger().info(message)
 
         buildWindowService.addBuildEvent(fakeFile, message)
         buildWindowService.endBuild(fakeFile)
