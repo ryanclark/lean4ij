@@ -2,6 +2,7 @@ package lean4ij.infoview
 
 import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.editor.colors.EditorColorsScheme
+import javax.swing.UIManager
 import lean4ij.language.Lean4SyntaxHighlighter
 import lean4ij.lsp.data.InteractiveDiagnostics
 import lean4ij.lsp.data.MsgEmbed
@@ -73,10 +74,17 @@ fun segmentMessage(message: TaggedText<MsgEmbed>): List<DiagSegment> {
 fun renderInteractiveDiagnosticHtml(diagnostic: InteractiveDiagnostics): String {
     val scheme = EditorColorsManager.getInstance().globalScheme
     val highlighter = Lean4SyntaxHighlighter()
+    // Render prose in the neutral tooltip text color. Otherwise the uncolored prose inside the <pre> below
+    // inherits the editor scheme's default foreground, which reads as "syntax-highlighted" prose; only the
+    // Lean code spans should carry editor colors. Falls back to the editor default if the LAF has no tooltip
+    // foreground.
+    val proseColor = UIManager.getColor("ToolTip.foreground") ?: scheme.defaultForeground
+    val proseHex = String.format("%06x", proseColor.rgb and 0xFFFFFF)
     val body = StringBuilder()
     for (segment in segmentMessage(diagnostic.message)) {
         when (segment) {
-            is DiagSegment.Prose -> body.append(escapeHtml(segment.text))
+            is DiagSegment.Prose -> body.append("<span style=\"color: #").append(proseHex).append(";\">")
+                .append(escapeHtml(segment.text)).append("</span>")
             is DiagSegment.Code -> appendHighlightedLeanCode(body, segment.text, highlighter, scheme)
         }
     }
