@@ -20,6 +20,14 @@ class LeanLSPCompletionFeature : LSPCompletionFeature() {
         return lean4Settings.enableLspCompletion
     }
 
+    /**
+     * Rank completion items by prefix-match relevance, not just the Lean server's sortText. lsp4ij defaults
+     * this to false, which left the popup in the server's order, so an exact-prefix match (e.g. `Line` when
+     * you have typed `L`) stayed buried under other `L...` items until enough was typed to filter them out.
+     * lsp4ij's comparator still uses the server's sortText as a tiebreaker, so Lean's semantic ranking is kept.
+     */
+    override fun useContextAwareSorting(file: PsiFile): Boolean = true
+
     override fun createLookupElement(
         item: CompletionItem,
         context: LSPCompletionContext
