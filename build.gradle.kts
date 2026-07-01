@@ -275,10 +275,11 @@ tasks {
         pairLiveTemplate.generate(space=false, context = "Lean4Pair", output="Lean4-pair.xml")
     }
 
-    // Native Lean lexer (JFlex) + skeleton parser/PSI (Grammar-Kit) generation into src/gen/java.
-    // purgeOldFiles cleans stale output, so we don't wire deleteGen into the compile chain (avoids a
-    // delete-after-generate race). Run `./gradlew deleteGen` manually for a clean regeneration.
-    @Suppress("UNUSED_VARIABLE")
+    // Native Lean lexer (JFlex) + skeleton parser/PSI (Grammar-Kit) generation into git-ignored src/gen/java.
+    // The lexer and parser both write into src/gen/java/lean4ij/language, so with purgeOldFiles each purged the
+    // other's output; on any clean build (e.g. the CI test job's fresh runner) whichever ran last left only its
+    // own file and broke compileKotlin. Instead deleteGen clears the dir once before either generator, and both
+    // run with purgeOldFiles=false so neither deletes the other's output.
     val deleteGen = register<Delete>("deleteGen") {
         delete("src/gen/java")
     }
@@ -288,7 +289,8 @@ tasks {
         group = "build setup"
         sourceFile.set(file("src/main/grammars/Lean4Lexer.flex"))
         targetOutputDir.set(file("src/gen/java/lean4ij/language"))
-        purgeOldFiles.set(true)
+        purgeOldFiles.set(false)
+        dependsOn(deleteGen)
     }
 
     val genLean4Parser = register<GenerateParserTask>("genLean4Parser") {
@@ -298,7 +300,8 @@ tasks {
         targetRootOutputDir.set(file("src/gen/java/"))
         pathToParser.set("src/gen/java/lean4ij/language/Lean4Parser.java")
         pathToPsiRoot.set("src/gen/java/lean4ij/language/")
-        purgeOldFiles.set(true)
+        purgeOldFiles.set(false)
+        dependsOn(deleteGen)
     }
 
     withType<KotlinCompile>().configureEach {
