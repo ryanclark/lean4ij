@@ -202,13 +202,16 @@ class LeanPanel(propertyGraph: PropertyGraph, private val wizardContext: WizardC
         wizardContext.getUserData(QUICK_STARTER_MODEL_KEY)?.set(quickStarterModel)
     }
 
+    // createSingleLocalFileDescriptor is deprecated, but its replacement singleFileOrDir() does not exist on
+    // 2024.2/2024.3 (sinceBuild=242) and throws NoSuchMethodError there, so keep the compatible call.
+    @Suppress("DEPRECATION")
     private fun Row.projectLocationField(
         locationProperty: GraphProperty<String>,
         wizardContext: WizardContext,
     ): Cell<TextFieldWithBrowseButton> {
         val title = IdeBundle.message("title.select.project.file.directory", wizardContext.presentationName)
         val fileChooserDescriptor =
-            FileChooserDescriptorFactory.singleFileOrDir()
+            FileChooserDescriptorFactory.createSingleLocalFileDescriptor()
                 .withTitle(title)
                 .withFileFilter { it.isDirectory }
                 .withPathToTextConvertor(::getPresentablePath)
