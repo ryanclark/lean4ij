@@ -8,6 +8,7 @@ import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.editor.ScrollType
 import com.intellij.openapi.editor.event.EditorMouseListener
 import com.intellij.openapi.editor.ex.EditorEx
+import com.intellij.openapi.editor.ex.util.LexerEditorHighlighter
 import com.intellij.openapi.editor.impl.DocumentImpl
 import com.intellij.openapi.externalSystem.autoimport.AutoImportProjectTracker
 import com.intellij.openapi.project.Project
@@ -17,6 +18,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import lean4ij.infoview.dsl.clearFoldListeners
+import lean4ij.language.Lean4SyntaxHighlighter
 import lean4ij.project.LeanProjectService
 
 
@@ -57,6 +59,10 @@ class InfoViewEditorFactory(val project: Project) {
             setVerticalScrollbarVisible(showScroll)
             isRendererMode = false
         }
+        // Syntax-highlight goal expressions with the native Lean highlighter. The DSL render layers its own
+        // structural attrs (goal symbol, hypotheses) on top at HighlighterLayer.SYNTAX, so this only colors
+        // the expression tokens the DSL otherwise leaves plain.
+        editor.highlighter = LexerEditorHighlighter(Lean4SyntaxHighlighter(), editor.colorsScheme)
         return editor
     }
 
