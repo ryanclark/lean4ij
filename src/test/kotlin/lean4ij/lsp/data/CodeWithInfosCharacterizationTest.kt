@@ -2,6 +2,7 @@ package lean4ij.lsp.data
 
 import lean4ij.infoview.Lean4TextAttributesKeys
 import lean4ij.infoview.dsl.InfoObjectModel
+import lean4ij.language.LeanConstReferenceAnnotator
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
@@ -45,14 +46,24 @@ class CodeWithInfosCharacterizationTest {
 
     @Test
     fun taggedTextText_plain_rendersTextVerbatim() {
-        val model = text("Nat").toInfoObjectModel()
-        // info { p("Nat") } => outer empty-text model with one child "Nat"
-        assertEquals("Nat", model.toString())
+        // An unclassified token (lowercase, not a known type/constructor) renders as one plain child.
+        val model = text("foo").toInfoObjectModel()
+        assertEquals("foo", model.toString())
         assertEquals("", model.text)
         assertEquals(1, model.children.size)
-        assertEquals("Nat", model.children[0].text)
-        // plain `p(text)` carries no attributes
+        assertEquals("foo", model.children[0].text)
         assertTrue(model.children[0].attr.isEmpty())
+    }
+
+    @Test
+    fun taggedTextText_valueClassifiesKnownToken() {
+        // Known tokens are colored by value (Nat is a builtin type) while the text stays verbatim.
+        val model = text("Nat").toInfoObjectModel()
+        assertEquals("Nat", model.toString())
+        assertEquals(1, model.children.size)
+        assertEquals("Nat", model.children[0].text)
+        assertEquals(1, model.children[0].attr.size)
+        assertSame(LeanConstReferenceAnnotator.LEAN_BUILTIN_TYPE, model.children[0].attr[0])
     }
 
     @Test
