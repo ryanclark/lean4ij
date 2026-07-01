@@ -4,6 +4,11 @@
 [![Version](https://img.shields.io/jetbrains/plugin/v/25104.svg)](https://plugins.jetbrains.com/plugin/25104)
 [![Downloads](https://img.shields.io/jetbrains/plugin/d/25104.svg)](https://plugins.jetbrains.com/plugin/25104)
 
+> **Fork notice.** This is a fork of [onriv/lean4ij](https://github.com/onriv/lean4ij),
+> maintained by [ryanclark](https://github.com/ryanclark). It tracks upstream and adds native
+> Lean 4 syntax highlighting, multi-package Lake support, and a large stability pass.
+> See [How this fork differs](#how-this-fork-differs).
+
 <!-- Plugin description -->
 A [Lean4](https://lean-lang.org/) plugin for Jetbrains IDES with the following features:
 - Interactive info view
@@ -85,6 +90,38 @@ Some color settings are under `Settings/Preferences` > `Editor` > `Color Scheme`
 settings for both the external and internal infoview.
 
 <!-- Plugin description end -->
+
+## How this fork differs
+
+This fork builds on upstream [onriv/lean4ij](https://github.com/onriv/lean4ij) with a focus on
+native editor integration and stability. The main differences:
+
+**Native Lean 4 syntax highlighting.** Highlighting runs through a native IntelliJ language
+(JFlex lexer + Grammar-Kit parser + PSI) instead of relying on LSP semantic tokens alone:
+- File-level symbol coloring that distinguishes declarations from usages, tactics, and inline
+  code in comments, with a deterministic priority order (`LeanConstReferenceAnnotator`).
+- Async `documentSymbol` + definition resolution that classifies project vs. external symbols
+  and theorem-vs-def kinds (`LeanSymbolColoringService`).
+- Bundled `LeanDarcula` and `LeanDefault` color schemes and a dedicated color settings page.
+
+**Richer editing support.** Enter handler, indentation, code folding, structure view, an
+import-sort formatter, typed handler, and spellchecking.
+
+**Multi-package Lake projects.** Each file is routed to the Lean server for its nearest-ancestor
+`lakefile`, with per-package servers registered lazily (`LakePackageService`). Single-package
+projects behave exactly as before.
+
+**LSP / infoview improvements.** Rich interactive-diagnostic tooltips, Lean-server inlay hints,
+completion ranked by prefix-match relevance with item types resolved on focus, and a
+`keepServerAlive` behavior that survives workspace-model changes.
+
+**Stability and hardening.** A large review pass fixing resource leaks, EDT-threading violations,
+data races, and unbounded caches, plus decomposition of several god-objects and added
+characterization tests across the codebase.
+
+> [!NOTE]
+> The changes in this fork were developed by guiding [Claude](https://www.anthropic.com/claude) to
+> make the edits. Direction, review, and final decisions are the maintainer's.
 
 ## Development
 
