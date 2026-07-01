@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-07-01
+
+- Fix a RangeHighlighterTree assertion (unhandled-exception popup) that fired when the file-progress
+  gutter markers were removed from a different editor than the one that created them (split view,
+  reopen, or Restart File)
+- Clean up compiler warnings: replace deprecated URL / getRequiredData / addPresentation /
+  FileChooserDescriptor APIs, drop redundant branches, and scope-suppress the unavoidable lsp4j
+  SymbolInformation deprecations
+
 ## [1.0.0] - 2026-07-01
 
 First release of the fork maintained at https://github.com/ryanclark/lean4ij. This fork is
