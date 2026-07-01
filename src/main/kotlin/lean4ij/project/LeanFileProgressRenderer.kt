@@ -143,6 +143,11 @@ class LeanFileProgressRenderer(
     // project session, so if the file is closed and reopened in a NEW editor the cached highlighter would be
     // stale (bound to the old, now-disposed editor); recreate it when the selected editor changes.
     private var firstLineHighlighterEditor: com.intellij.openapi.editor.Editor? = null
+    // The editor the current line-marker [highlighters] batch was created on. selectedTextEditor can return a
+    // different editor for the same file (split, reopen, Restart File); the markers must be removed from the
+    // model that owns them, or removeHighlighter asserts (checkBelongsToTheTree, an AssertionError the caller's
+    // catch(Exception) would not even catch).
+    private var lineMarkersEditor: com.intellij.openapi.editor.Editor? = null
     private val leanFileProgressEmptyTextAttributesKey = TextAttributesKey.createTextAttributesKey("LEAN_FILE_PROGRESS_EMPTY")
 
     private suspend fun tryAddLineMarker(info: FileProgressProcessingInfo, highlighters: MutableList<RangeHighlighter>): MutableList<RangeHighlighter> {
@@ -162,8 +167,10 @@ class LeanFileProgressRenderer(
                 firstLineHighlighterEditor = editor
             }
             firstLineHighlighter!!.lineMarkerRenderer = LeanFileProgressFinishedFillingLineMarkerRenderer
-            for (highlighter in highlighters) {
-                markupModel.removeHighlighter(highlighter)
+            lineMarkersEditor?.takeIf { !it.isDisposed }?.let { owner ->
+                for (highlighter in highlighters) {
+                    owner.markupModel.removeHighlighter(highlighter)
+                }
             }
             for (processingInfo in info.processing) {
                 val startLine = processingInfo.range.start.line.let {
@@ -192,6 +199,7 @@ class LeanFileProgressRenderer(
                 rangeHighlighter.lineMarkerRenderer = LeanFileProgressFillingLineMarkerRenderer
                 ret.add(rangeHighlighter)
             }
+            lineMarkersEditor = editor
             ret
         }
     }
