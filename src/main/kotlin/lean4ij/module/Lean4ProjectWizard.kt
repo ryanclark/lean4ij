@@ -208,7 +208,7 @@ class LeanPanel(propertyGraph: PropertyGraph, private val wizardContext: WizardC
     ): Cell<TextFieldWithBrowseButton> {
         val title = IdeBundle.message("title.select.project.file.directory", wizardContext.presentationName)
         val fileChooserDescriptor =
-            FileChooserDescriptorFactory.createSingleLocalFileDescriptor()
+            FileChooserDescriptorFactory.singleFileOrDir()
                 .withTitle(title)
                 .withFileFilter { it.isDirectory }
                 .withPathToTextConvertor(::getPresentablePath)

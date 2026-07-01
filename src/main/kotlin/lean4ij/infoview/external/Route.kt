@@ -305,6 +305,7 @@ fun createThemeCss(scheme: EditorColorsScheme) : String {
           "--vscode-goal-inaccessible": "DEFAULT_LINE_COMMENT.foreground"
         }
     """.trimIndent()
+    @Suppress("UNCHECKED_CAST")
     val theme = gson.fromJson(themeStr, Map::class.java) as Map<String, String>
     val themeSb = StringBuilder()
     theme.forEach { (t, u) ->

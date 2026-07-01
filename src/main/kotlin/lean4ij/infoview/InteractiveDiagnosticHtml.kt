@@ -54,8 +54,6 @@ fun segmentMessage(message: TaggedText<MsgEmbed>): List<DiagSegment> {
                 }
                 walk(node.f1)
             }
-            // Defensive: any unknown TaggedText variant -> its flattened text as prose.
-            else -> emitProse(node.toInfoObjectModel().toString())
         }
     }
     walk(message)

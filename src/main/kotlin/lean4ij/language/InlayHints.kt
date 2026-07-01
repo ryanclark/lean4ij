@@ -97,7 +97,7 @@ class HintSet {
 
     fun dumpHints(sink: InlayTreeSink) {
         this.hints.forEach { hint ->
-            sink.addPresentation(InlineInlayPosition(hint.offset, false), hasBackground = true) {
+            sink.addPresentation(InlineInlayPosition(hint.offset, false), hintFormat = HintFormat.default) {
                 this.addHint(hint)
             }
         }

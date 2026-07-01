@@ -39,7 +39,7 @@ class LeanLibrary(
 
     companion object {
         // TODO this absolutely should be check with detail
-        val LIBRARY_ICON = IconLoader.getIcon("/icons/libraryFolder.svg", javaClass)
+        val LIBRARY_ICON = IconLoader.getIcon("/icons/libraryFolder.svg", LeanLibrary::class.java)
     }
 
     override fun hashCode() = root.hashCode()

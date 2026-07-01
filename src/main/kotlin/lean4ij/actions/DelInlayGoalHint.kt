@@ -22,7 +22,7 @@ class DelInlayGoalHint : AnAction() {
     }
 
     override fun actionPerformed(e: AnActionEvent) {
-        val editor: Editor = e.getRequiredData(CommonDataKeys.EDITOR);
+        val editor: Editor = e.getData(CommonDataKeys.EDITOR) ?: return;
         val selector = editor.selectionModel
         val selectionStart = selector.selectionStart
         val selectionEnd = selector.selectionEnd

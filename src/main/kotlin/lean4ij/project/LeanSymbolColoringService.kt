@@ -343,6 +343,8 @@ class LeanSymbolColoringService(private val project: Project) {
             ds.children?.forEach { collectSymbolNames(Either.forRight(it), out, constructors) }
         } else if (symbol.isLeft) {
             val si = symbol.left
+            // lsp4j deprecated SymbolInformation wholesale, but documentSymbol can still return this flat form.
+            @Suppress("DEPRECATION")
             when {
                 isFieldLike(si.kind) -> {}
                 isConstructorLike(si.kind) -> addName(si.name, constructors)

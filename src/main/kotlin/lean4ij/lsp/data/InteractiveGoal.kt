@@ -29,9 +29,7 @@ class InteractiveGoal(
     fun toInfoObjectModel(): InfoObjectModel = info {
         if (userName != null) {
             fold {
-                if (userName != null) {
-                    h3("case $userName")
-                }
+                h3("case $userName")
                 createGoalObjectModel(hyps, type)
             }
         } else {

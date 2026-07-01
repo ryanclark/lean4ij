@@ -168,6 +168,8 @@ class WorkspaceSymbolsCacheLoader(private val project: Project) :
         } ?: return listOf()
         val items: MutableList<LeanWorkspaceSymbolData> = ArrayList()
         if (symbols.isLeft) {
+            // lsp4j deprecated SymbolInformation wholesale, but the workspace/symbol left branch still delivers it.
+            @Suppress("DEPRECATION")
             for (si in symbols.left) {
                 // Skip a malformed symbol rather than !! and abort the whole batch with an NPE.
                 val name = si?.name ?: continue

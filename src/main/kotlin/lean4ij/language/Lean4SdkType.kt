@@ -16,6 +16,7 @@ class Lean4SdkType : SdkType("Lean4") {
     override fun saveAdditionalData(additionalData: SdkAdditionalData, additional: Element) {
     }
 
+    @Suppress("OVERRIDE_DEPRECATION")
     override fun suggestHomePath(): String? {
         return null
     }

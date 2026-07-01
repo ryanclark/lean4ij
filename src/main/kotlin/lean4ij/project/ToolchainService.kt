@@ -9,7 +9,7 @@ import kotlinx.serialization.json.Json
 import lean4ij.util.fromJson
 import java.net.HttpURLConnection
 import java.net.Proxy
-import java.net.URL
+import java.net.URI
 import java.nio.file.Path
 
 data class GitHubTag(val name: String)
@@ -53,7 +53,7 @@ class ElanService {
      * The method is from standard library and avoids relying on third party libraries
      */
     fun getGitHubTags(owner: String, repo: String, proxy: Proxy?): List<String> {
-        val url = URL("https://api.github.com/repos/$owner/$repo/tags")
+        val url = URI("https://api.github.com/repos/$owner/$repo/tags").toURL()
         val connection = (if (proxy != null) {
             url.openConnection(proxy)
         } else {

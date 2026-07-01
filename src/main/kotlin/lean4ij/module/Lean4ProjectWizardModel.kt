@@ -18,7 +18,7 @@ import java.io.File
 import java.net.ConnectException
 import java.net.InetSocketAddress
 import java.net.Proxy
-import java.net.URL
+import java.net.URI
 
 /**
  * The data model for the New Lean4 Project wizard (the UI panels, wizard step, and module builder live in
@@ -60,7 +60,7 @@ internal fun buildLakeCommand(entityName: String, template: String, language: St
  * otherwise [Proxy.Type.HTTP].
  */
 internal fun proxyFromUrl(proxyValue: String): Proxy {
-    val url = URL(proxyValue)
+    val url = URI(proxyValue).toURL()
     val type = if (url.protocol.contains("sock")) {
         Proxy.Type.SOCKS
     } else {

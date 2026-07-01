@@ -38,7 +38,7 @@ import lean4ij.util.LeanUtil
 import org.eclipse.lsp4j.InitializeResult
 import org.eclipse.lsp4j.jsonrpc.messages.NotificationMessage
 import org.eclipse.lsp4j.services.LanguageServer
-import java.net.URL
+import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -283,7 +283,7 @@ class LeanProjectService(val project: Project, val scope: CoroutineScope)  {
     fun getGoToLocation(targets: List<DefinitionTarget>) {
         val target = targets.firstOrNull() ?: return
         // TODO this must be tested if it work in windows
-        val file = LocalFileSystem.getInstance().findFileByNioFile(Path(URL(target.targetUri).path)) ?: return
+        val file = LocalFileSystem.getInstance().findFileByNioFile(Path(URI(target.targetUri).toURL().path)) ?: return
         // TODO UTF_8 might fail for some locale, but no better way currently for it
         val content = String(file.contentsToByteArray(), StandardCharsets.UTF_8)
         // TODO also impl select? currently the caret put at the start pos

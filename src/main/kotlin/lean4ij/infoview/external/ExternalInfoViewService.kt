@@ -29,7 +29,7 @@ import lean4ij.util.Constants
 import lean4ij.util.OsUtil
 import org.eclipse.lsp4j.InitializeResult
 import java.io.File
-import java.net.URL
+import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.nio.file.Paths
 import java.util.concurrent.CopyOnWriteArrayList
@@ -130,7 +130,7 @@ class ExternalInfoViewService(val project: Project) : Disposable {
         val tooltipMessage : GotItTextBuilder.() -> String = {
             buildString {
                 append("infoview server start at ")
-                append(browserLink(url, URL(url)))
+                append(browserLink(url, URI(url).toURL()))
             }
         }
         // TODO not easier to show though
