@@ -1,8 +1,8 @@
 # Lean4ij
 
-![Build](https://github.com/onriv/lean4ij/workflows/Build/badge.svg)
-[![Version](https://img.shields.io/jetbrains/plugin/v/25104.svg)](https://plugins.jetbrains.com/plugin/25104)
-[![Downloads](https://img.shields.io/jetbrains/plugin/d/25104.svg)](https://plugins.jetbrains.com/plugin/25104)
+![Build](https://github.com/ryanclark/lean4ij/workflows/Build/badge.svg)
+[![Release](https://img.shields.io/github/v/release/ryanclark/lean4ij)](https://github.com/ryanclark/lean4ij/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/ryanclark/lean4ij/total)](https://github.com/ryanclark/lean4ij/releases)
 
 > **Fork notice.** This is a fork of [onriv/lean4ij](https://github.com/onriv/lean4ij),
 > maintained by [ryanclark](https://github.com/ryanclark). It tracks upstream and adds native
@@ -26,16 +26,15 @@ https://github.com/user-attachments/assets/25757345-0249-4999-adc7-7dadf94c8b0e
 
 # Installation
 
-First, [install Lean]( https://lean-lang.org/lean4/doc/setup.html)
+First, [install Lean](https://lean-lang.org/lean4/doc/setup.html).
 
-Afterwards, you have two options for installing Lean4ij:
-1. Using the IDE built-in plugin system (recommended): `Settings/Preferences` > `Plugins` > `Marketplace` > `Search for "lean4ij"` >
-  `Install`. You can also download the beta versions by adding the beta channel `https://plugins.jetbrains.com/plugins/beta/list` to the plugin repository via `Manage Plugin Repositories...` in the setting options of the plugin page.
-2. Manually: Download the [latest release](https://github.com/onriv/lean4ij/releases/latest) and install it
-  using
-  `Settings/Preferences` > `Plugins` > `⚙️` > `Install plugin from disk...` For nightly builds go
-  to [Actions/build](https://github.com/onriv/lean4ij/actions/workflows/build.yml), find the latest successful run and
-  scroll to the bottom.
+This fork is not published to the JetBrains Marketplace. Install it from the packaged plugin zip:
+
+1. Download the latest `lean4ij-<version>.zip` from the [Releases page](https://github.com/ryanclark/lean4ij/releases/latest).
+2. In your JetBrains IDE, open `Settings/Preferences` > `Plugins` > `⚙️` > `Install Plugin from Disk...` and select the downloaded zip.
+3. Restart the IDE when prompted.
+
+To build the zip yourself instead, run `./gradlew buildPlugin` and use the file produced under `build/distributions/`. For nightly builds, grab the artifact from the latest successful [Build workflow run](https://github.com/ryanclark/lean4ij/actions/workflows/build.yml).
 
 ## Usage
 

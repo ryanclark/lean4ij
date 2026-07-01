@@ -4,6 +4,26 @@
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-07-01
+
+First release of the fork maintained at https://github.com/ryanclark/lean4ij. This fork is
+distributed as a downloadable plugin zip from GitHub Releases and is not published to the
+JetBrains Marketplace.
+
+- Native Lean 4 syntax highlighting via a native IntelliJ language (JFlex lexer, Grammar-Kit
+  parser, PSI) with declaration-vs-usage symbol coloring and bundled LeanDarcula/LeanDefault
+  color schemes
+- Editing support: enter handler, indentation, folding, structure view, import-sort formatter,
+  typed handler, and spellchecking
+- Multi-package Lake projects: each file is routed to the Lean server for its nearest-ancestor
+  lakefile
+- LSP and infoview improvements: interactive-diagnostic tooltips, Lean-server inlay hints,
+  relevance-ranked completion with item types, and keep-alive across workspace-model changes
+- Infoview UX: syntax-highlighted goal expressions (builtin-type, type, and constructor colors),
+  left/right text padding, always-expanded non-collapsible goal inlay hints, a mini-infoview
+  vertical-clipping fix, and friendly tool-window names (Lean Infoview / Lean Infoview (Web))
+- Stability pass: resource-leak, EDT-threading, data-race, and unbounded-cache fixes, plus
+  added characterization tests
 - #165, fix #164, Fix completions deleting everything before the caret
 
 ## [0.2.7] - 2025-04-13
