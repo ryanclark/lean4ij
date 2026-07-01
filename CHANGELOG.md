@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-07-01
+
+- Fix a NoSuchMethodError in the new-project wizard on IntelliJ 2024.2/2024.3
+  (`FileChooserDescriptorFactory.singleFileOrDir` did not exist before 2025.1)
+
 ## [1.0.1] - 2026-07-01
 
 - Fix a RangeHighlighterTree assertion (unhandled-exception popup) that fired when the file-progress
