@@ -347,5 +347,32 @@ class LeanConstReferenceAnnotator : Annotator, DumbAware {
             }
             return out
         }
+
+        // Value-only classification for rendered infoview goal text, which has no source offsets to resolve
+        // against. Covers only the resolution-free rules: builtin-type split, capitalized to type, builtin
+        // constructors. Tactics stay off by default because a bound variable can share a tactic name and goal
+        // text carries no tactic script to disambiguate.
+        fun classifyTokenValue(tok: String, colorTactics: Boolean): TextAttributesKey? = when {
+            tok.isEmpty() -> null
+            tok in BUILTIN_TYPES -> LEAN_BUILTIN_TYPE
+            tok[0].isUpperCase() -> LEAN_TYPE
+            tok in BUILTIN_CONSTRUCTORS -> LEAN_CONSTRUCTOR
+            colorTactics && tok in TACTICS -> LEAN_TACTIC
+            else -> null
+        }
+
+        // Split a rendered text fragment into consecutive (fragment, colorKey?) runs so the infoview can paint
+        // identifier tokens by value while leaving separators and operators to the lexer highlighter.
+        fun colorRuns(text: String, colorTactics: Boolean): List<Pair<String, TextAttributesKey?>> {
+            val runs = ArrayList<Pair<String, TextAttributesKey?>>()
+            var last = 0
+            for (m in IDENTIFIER.findAll(text)) {
+                if (m.range.first > last) runs.add(text.substring(last, m.range.first) to null)
+                runs.add(m.value to classifyTokenValue(m.value, colorTactics))
+                last = m.range.last + 1
+            }
+            if (last < text.length) runs.add(text.substring(last) to null)
+            return runs
+        }
     }
 }

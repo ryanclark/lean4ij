@@ -5,6 +5,7 @@ import lean4ij.infoview.Lean4TextAttributesKeys
 import lean4ij.infoview.LeanInfoviewContext
 import lean4ij.infoview.dsl.InfoObjectModel
 import lean4ij.infoview.dsl.info
+import lean4ij.language.LeanConstReferenceAnnotator
 import lean4ij.util.LspUtil
 import org.eclipse.lsp4j.TextDocumentIdentifier
 
@@ -58,7 +59,11 @@ class TaggedTextText<T>(val text: String) : TaggedText<T>() where T : InfoViewCo
         if (text == "declaration uses 'sorry'") {
             p(text, Lean4TextAttributesKeys.SwingInfoviewAllMessageSorryPos)
         } else {
-            p(text)
+            // Color type-family / constructor tokens in the rendered expression. Position-context rules
+            // (leading-dot, match-arm) are unavailable on a bare text fragment, so this is value-only.
+            for ((frag, key) in LeanConstReferenceAnnotator.colorRuns(text, false)) {
+                if (key != null) p(frag, mutableListOf(key)) else p(frag)
+            }
         }
     }
 
