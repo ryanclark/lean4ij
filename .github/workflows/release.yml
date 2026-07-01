@@ -1,16 +1,21 @@
-# Builds the plugin and attaches the distribution zip to a published GitHub Release.
-# This fork is not published to the JetBrains Marketplace; install by downloading the zip
-# from the Releases page and using "Install Plugin from Disk..." in the IDE.
+# Fully automated release. On a push to main that changes gradle.properties, if the pluginVersion has no
+# matching vX.Y.Z GitHub Release yet, build the plugin and publish the release with the zip attached and notes
+# from the matching CHANGELOG section. Bumping pluginVersion + pushing is the entire release process; no drafts,
+# no manual publish step.
 
 name: Release
 on:
-  release:
-    types: [published]
+  push:
+    branches: [ main ]
+    paths: [ 'gradle.properties' ]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-
   release:
-    name: Attach Plugin Zip
+    name: Publish on version bump
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -23,29 +28,52 @@ jobs:
           tool-cache: false
           large-packages: false
 
-      # Check out the tag the release points at
       - name: Fetch Sources
         uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event.release.tag_name }}
 
-      # Set up the Java environment for the next steps
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: zulu
           java-version: 21
 
-      # Setup Gradle
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      # Build the plugin distribution zip
-      - name: Build Plugin
-        run: ./gradlew buildPlugin
+      # Read pluginVersion from gradle.properties (same extraction the old draft job used)
+      - name: Read plugin version
+        id: version
+        run: |
+          VERSION=$(./gradlew properties --property pluginVersion --quiet --console=plain | tail -n 1 | cut -f2- -d ' ')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Plugin version: $VERSION"
 
-      # Attach the built zip to the release as a downloadable asset
-      - name: Upload Release Asset
+      # Skip everything below if a release for this version already exists (i.e. the version was not bumped)
+      - name: Check for an existing release
+        id: check
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.event.release.tag_name }}" ./build/distributions/*.zip --clobber
+        run: |
+          if gh release view "v${{ steps.version.outputs.version }}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "v${{ steps.version.outputs.version }} already released; nothing to do."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build plugin
+        if: steps.check.outputs.exists == 'false'
+        run: ./gradlew buildPlugin
+
+      - name: Publish release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          NOTES=$(awk "/^## \[$VERSION\]/{f=1;next} /^## \[/{f=0} f" CHANGELOG.md)
+          gh release create "v$VERSION" \
+            --repo "${{ github.repository }}" \
+            --title "v$VERSION" \
+            --notes "${NOTES:-Release v$VERSION}" \
+            ./build/distributions/*.zip
