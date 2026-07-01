@@ -64,9 +64,9 @@ class InfoViewEditorFactory(val project: Project) {
         // structural attrs (goal symbol, hypotheses) on top at HighlighterLayer.SYNTAX, so this only colors
         // the expression tokens the DSL otherwise leaves plain.
         editor.highlighter = LexerEditorHighlighter(Lean4SyntaxHighlighter(), editor.colorsScheme)
-        // Left/right breathing room so goal text isn't flush against the tool window edges.
+        // Pad the text area, not the whole editor, so the goal text is inset while the gutter stays at the edge.
         if (sidePadding > 0) {
-            editor.component.border = JBUI.Borders.empty(0, sidePadding)
+            editor.contentComponent.border = JBUI.Borders.empty(0, sidePadding)
         }
         return editor
     }
