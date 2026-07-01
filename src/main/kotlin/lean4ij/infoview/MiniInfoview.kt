@@ -12,6 +12,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.intellij.util.ui.JBUI
 import lean4ij.project.LeanProjectService
 import java.awt.Dimension
 
@@ -81,7 +82,10 @@ class MiniInfoview(val project: Project) : SimpleToolWindowPanel(true) {
             val lineHeight = editor.lineHeight
             val totalHeight = lineHeight * lines.size
 
-            Dimension(maxWidth + 40, totalHeight + 5)
+            // Leave room for the horizontal scrollbar the scroll pane shows AS_NEEDED plus editor insets. The
+            // width estimate above underestimates bold/unicode goal text, so the bar frequently appears; with
+            // only the old +5 it overlapped and vertically clipped the single line of goal text on caret moves.
+            Dimension(maxWidth + 40, totalHeight + JBUI.scale(18))
         }
     }
 }
