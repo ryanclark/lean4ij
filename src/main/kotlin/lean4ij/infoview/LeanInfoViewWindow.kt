@@ -14,6 +14,7 @@ import com.intellij.openapi.externalSystem.autoimport.AutoImportProjectTracker
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.SimpleToolWindowPanel
 import com.intellij.openapi.wm.ToolWindow
+import com.intellij.util.ui.JBUI
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -27,7 +28,7 @@ class InfoViewEditorFactory(val project: Project) {
      * create an editorEx for rendering the info view
      * **this is only for EDT**, create it using
      */
-    fun createEditor(isPopupDoc: Boolean=false, showScroll: Boolean=true): EditorEx {
+    fun createEditor(isPopupDoc: Boolean=false, showScroll: Boolean=true, sidePadding: Int = 0): EditorEx {
         val editor = EditorFactory.getInstance()
             // java.lang.RuntimeException: Memory leak detected: 'com.intellij.openapi.editor.impl.view.EditorView@601dc681' (class com.intellij.openapi.editor.impl.view.EditorView) was registered in Disposer as a child of 'ROOT_DISPOSABLE' (class com.intellij.openapi.util.Disposer$2) but wasn't disposed.
             // Register it with a proper parentDisposable or ensure that it's always disposed by direct Disposer.dispose call.
@@ -63,6 +64,10 @@ class InfoViewEditorFactory(val project: Project) {
         // structural attrs (goal symbol, hypotheses) on top at HighlighterLayer.SYNTAX, so this only colors
         // the expression tokens the DSL otherwise leaves plain.
         editor.highlighter = LexerEditorHighlighter(Lean4SyntaxHighlighter(), editor.colorsScheme)
+        // Left/right breathing room so goal text isn't flush against the tool window edges.
+        if (sidePadding > 0) {
+            editor.component.border = JBUI.Borders.empty(0, sidePadding)
+        }
         return editor
     }
 
@@ -104,7 +109,7 @@ class LeanInfoViewWindow(val toolWindow: ToolWindow) : SimpleToolWindowPanel(tru
     init {
         leanProject.scope.launch(Dispatchers.EDT) {
             try {
-                val editor0 = InfoViewEditorFactory(toolWindow.project).createEditor()
+                val editor0 = InfoViewEditorFactory(toolWindow.project).createEditor(sidePadding = 8)
                 installPopupHandler(editor0)
                 if (disposed) {
                     // Content was disposed before this editor finished creating; release it rather than leak it.
@@ -212,7 +217,7 @@ class LeanInfoViewWindow(val toolWindow: ToolWindow) : SimpleToolWindowPanel(tru
             // complete() is a no-op once the deferred is completed, so re-completing would never publish the
             // new editor and would leak it. Release the old editor and swap in a fresh, fully wired deferred.
             val old = currentEditor
-            val newEditor = InfoViewEditorFactory(toolWindow.project).createEditor()
+            val newEditor = InfoViewEditorFactory(toolWindow.project).createEditor(sidePadding = 8)
             installPopupHandler(newEditor)
             currentEditor = newEditor
             editor = CompletableDeferred<EditorEx>().apply { complete(newEditor) }
