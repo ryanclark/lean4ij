@@ -49,7 +49,7 @@ class InfoViewWindowFactory : ToolWindowFactory {
             // raised "Access is allowed from Event Dispatch Thread (EDT) only". contentManagerIfCreated
             // returns null when the content has not been created yet, which the null handling below already expects.
             val contents = ToolWindowManager.getInstance(project)
-                .getToolWindow("LeanInfoViewWindow")
+                .getToolWindow("Lean Infoview")
                 ?.contentManagerIfCreated?.contents
             // If the project just startup and teh tool window never opened before
             // it may be null

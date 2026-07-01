@@ -104,12 +104,12 @@
 
         <!-- check https://plugins.jetbrains.com/docs/intellij/icons.html#mapping-entries for making icons to respect theme -->
         <library.toolWindow factoryClass="lean4ij.infoview.InfoViewWindowFactory"
-                    id="LeanInfoViewWindow"
+                    id="Lean Infoview"
                     icon="/icons/infoview_icon.svg"
                     librarySearchClass="lean4ij.infoview.InfoviewLibrarySearchHelper"
         />
         <library.toolWindow factoryClass="lean4ij.infoview.external.JcefInfoviewToolWindowFactory"
-                    id="LeanInfoviewJcef"
+                    id="Lean Infoview (Web)"
                     icon="/icons/jcef_icon.svg"
                     librarySearchClass="lean4ij.infoview.InfoviewLibrarySearchHelper"
         />

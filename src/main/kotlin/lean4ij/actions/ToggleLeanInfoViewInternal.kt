@@ -19,7 +19,7 @@ class ToggleLeanInfoViewInternal : AnAction() {
         // the latter no longer force-creates the tool window content, so it would return null
         // (and this action would no-op) until the infoview has been opened once. show() creates
         // the content on the EDT when needed.
-        val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("LeanInfoViewWindow") ?: return
+        val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("Lean Infoview") ?: return
         if (toolWindow.isVisible) {
             toolWindow.hide()
         } else {

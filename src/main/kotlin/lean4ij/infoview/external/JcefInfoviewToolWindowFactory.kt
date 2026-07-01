@@ -22,7 +22,7 @@ class JcefInfoviewToolWindowFactory : ToolWindowFactory {
          * The id is defined in plugin.xml
          */
         fun getToolWindow(project: Project): ToolWindow? =
-            ToolWindowManager.getInstance(project).getToolWindow("LeanInfoviewJcef")
+            ToolWindowManager.getInstance(project).getToolWindow("Lean Infoview (Web)")
     }
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
