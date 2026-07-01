@@ -413,7 +413,9 @@ class GoalInlayHintsCollector(editor: Editor, project: Project?) : InlayHintBase
             }
 
             val hintPos = m.range.first + m.groupValues[1].length
-            hints.add(Hint(hintPos, typeHint, 100, "..."))
+            // Default-expand goal hints: the goal IS the point of the hint, so render it inline instead of
+            // collapsing long goals to "..." by default (still manually collapsible via the toggle).
+            hints.add(Hint(hintPos, typeHint, Int.MAX_VALUE, "..."))
         }
 
         return hints
