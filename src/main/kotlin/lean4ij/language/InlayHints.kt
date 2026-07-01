@@ -55,7 +55,7 @@ import java.util.concurrent.ConcurrentHashMap
 // between background computation and rendering, and the cache is keyed by modificationStamp, so there is no
 // edit to track. Storing RangeMarkers here leaked them: the document's RangeMarkerTree retains every marker
 // until it is disposed, and these never were, so editing degraded as markers accumulated over a session.
-class Hint(val offset: Int, val content: String, val collapseSize: Int, val collapsedText: String)
+class Hint(val offset: Int, val content: String, val collapseSize: Int, val collapsedText: String, val collapsible: Boolean = true)
 
 class HintSet {
     companion object {
@@ -69,26 +69,28 @@ class HintSet {
     }
 
     private fun PresentationTreeBuilder.addHint(hint: Hint) {
+        // text() truncates each segment to the platform's 30-char cap, so always feed it chunked.
+        if (!hint.collapsible || hint.content.length < MIN_EVER_COLLAPSED) {
+            for (chunk in hint.content.chunked(30)) {
+                text(chunk)
+            }
+            return
+        }
+
         val defaultState = if (hint.content.length < hint.collapseSize) {
             CollapseState.Expanded
         } else {
             CollapseState.Collapsed
         }
-
-        if (hint.content.length < MIN_EVER_COLLAPSED) {
-            text(hint.content)
-        }
-        else {
-            this.collapsibleList(defaultState, {
-                toggleButton {
-                    for (chunk in hint.content.chunked(30)) {
-                        text(chunk)
-                    }
+        this.collapsibleList(defaultState, {
+            toggleButton {
+                for (chunk in hint.content.chunked(30)) {
+                    text(chunk)
                 }
-            }) {
-                toggleButton {
-                    text(hint.collapsedText)
-                }
+            }
+        }) {
+            toggleButton {
+                text(hint.collapsedText)
             }
         }
     }
@@ -413,9 +415,9 @@ class GoalInlayHintsCollector(editor: Editor, project: Project?) : InlayHintBase
             }
 
             val hintPos = m.range.first + m.groupValues[1].length
-            // Default-expand goal hints: the goal IS the point of the hint, so render it inline instead of
-            // collapsing long goals to "..." by default (still manually collapsible via the toggle).
-            hints.add(Hint(hintPos, typeHint, Int.MAX_VALUE, "..."))
+            // The goal IS the point of the hint, so render it inline and non-collapsible rather than hiding
+            // it behind a toggle or the default "..." collapse.
+            hints.add(Hint(hintPos, typeHint, Int.MAX_VALUE, "...", collapsible = false))
         }
 
         return hints
