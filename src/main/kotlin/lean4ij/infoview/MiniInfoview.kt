@@ -82,9 +82,8 @@ class MiniInfoview(val project: Project) : SimpleToolWindowPanel(true) {
             val lineHeight = editor.lineHeight
             val totalHeight = lineHeight * lines.size
 
-            // Leave room for the horizontal scrollbar the scroll pane shows AS_NEEDED plus editor insets. The
-            // width estimate above underestimates bold/unicode goal text, so the bar frequently appears; with
-            // only the old +5 it overlapped and vertically clipped the single line of goal text on caret moves.
+            // The width estimate undershoots bold/unicode goal text, so the scroll pane shows its AS_NEEDED
+            // horizontal bar. The height must cover that bar plus editor insets or it clips the goal line.
             Dimension(maxWidth + 40, totalHeight + JBUI.scale(18))
         }
     }
